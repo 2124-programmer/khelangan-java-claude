@@ -20,6 +20,7 @@ src/main/java/com/turfbook/backend/dto/BookingDto.java
 src/main/java/com/turfbook/backend/dto/BookingPage.java
 src/main/java/com/turfbook/backend/dto/BroadcastRequest.java
 src/main/java/com/turfbook/backend/dto/BulkBlockRequest.java
+src/main/java/com/turfbook/backend/dto/ChangeRoleRequest.java
 src/main/java/com/turfbook/backend/dto/CouponDto.java
 src/main/java/com/turfbook/backend/dto/CouponPage.java
 src/main/java/com/turfbook/backend/dto/CouponValidationResponse.java
@@ -41,6 +42,7 @@ src/main/java/com/turfbook/backend/dto/MessageResponse.java
 src/main/java/com/turfbook/backend/dto/NotificationDto.java
 src/main/java/com/turfbook/backend/dto/NotificationPage.java
 src/main/java/com/turfbook/backend/dto/OtpSendRequest.java
+src/main/java/com/turfbook/backend/dto/OtpSendResponse.java
 src/main/java/com/turfbook/backend/dto/OtpVerifyRequest.java
 src/main/java/com/turfbook/backend/dto/OwnerStatsDto.java
 src/main/java/com/turfbook/backend/dto/PayoutDto.java

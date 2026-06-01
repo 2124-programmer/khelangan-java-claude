@@ -1,17 +1,22 @@
 package com.turfbook.backend.service.impl;
 
+import com.turfbook.backend.dto.AuthResponse;
+import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import com.turfbook.backend.dto.UserPage;
 import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.exception.ResourceNotFoundException;
+import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.UserMapper;
 import com.turfbook.backend.repository.UserRepository;
+import com.turfbook.backend.security.JwtTokenProvider;
 import com.turfbook.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -22,6 +27,8 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtTokenProvider tokenProvider;
 
     @Override
     @Transactional(readOnly = true)
@@ -48,6 +55,44 @@ public class UserServiceImpl implements UserService {
         }
 
         return userMapper.toDto(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse changeRole(Long userId, ChangeRoleRequest request) {
+        UserEntity user = getEntityById(userId);
+
+        // Re-authenticate: verify the supplied password against the stored hash
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new UnauthorizedException("Incorrect password");
+        }
+
+        UserEntity.Role targetRole;
+        try {
+            targetRole = UserEntity.Role.valueOf(request.getTargetRole().getValue());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid role: " + request.getTargetRole());
+        }
+
+        // Prevent ADMIN self-assignment and no-op transitions
+        if (targetRole == UserEntity.Role.ADMIN) {
+            throw new IllegalArgumentException("Cannot self-assign ADMIN role");
+        }
+        if (user.getRole() == targetRole) {
+            throw new IllegalArgumentException("Account is already " + targetRole.name());
+        }
+
+        user.setRole(targetRole);
+        userRepository.save(user);
+
+        // Issue a fresh JWT with the new role so the client can swap immediately
+        String newToken = tokenProvider.generateToken(user.getId(), targetRole.name());
+
+        AuthResponse response = new AuthResponse();
+        response.setToken(newToken);
+        response.setRefreshToken(newToken);
+        response.setUser(userMapper.toDto(user));
+        return response;
     }
 
     @Override

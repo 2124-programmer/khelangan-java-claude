@@ -8,7 +8,7 @@ public interface AuthService {
 
     AuthResponse login(LoginRequest request);
 
-    MessageResponse sendOtp(OtpSendRequest request);
+    OtpSendResponse sendOtp(OtpSendRequest request);
 
     AuthResponse verifyOtp(OtpVerifyRequest request);
 

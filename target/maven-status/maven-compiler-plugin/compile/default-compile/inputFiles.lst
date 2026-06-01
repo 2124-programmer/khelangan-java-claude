@@ -20,6 +20,7 @@ E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\back
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\CourtEntity.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\DisputeEntity.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\NotificationEntity.java
+E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\OtpRecordEntity.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\PayoutEntity.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\PlatformSettingsEntity.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\entity\ReviewEntity.java
@@ -49,6 +50,7 @@ E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\back
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\CourtRepository.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\DisputeRepository.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\NotificationRepository.java
+E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\OtpRecordRepository.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\PayoutRepository.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\PlatformSettingsRepository.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\src\main\java\com\turfbook\backend\repository\ReviewRepository.java
@@ -103,6 +105,7 @@ E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openap
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\BookingPage.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\BroadcastRequest.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\BulkBlockRequest.java
+E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\ChangeRoleRequest.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\CouponDto.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\CouponPage.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\CouponValidationResponse.java
@@ -124,6 +127,7 @@ E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openap
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\NotificationDto.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\NotificationPage.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\OtpSendRequest.java
+E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\OtpSendResponse.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\OtpVerifyRequest.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\OwnerStatsDto.java
 E:\LIve-projects\Khelangan-java\turfbook-backend\target\generated-sources\openapi\src\main\java\com\turfbook\backend\dto\PayoutDto.java

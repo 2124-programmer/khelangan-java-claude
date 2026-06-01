@@ -5,6 +5,9 @@
  */
 package com.turfbook.backend.api;
 
+import com.turfbook.backend.dto.AuthResponse;
+import com.turfbook.backend.dto.ChangeRoleRequest;
+import com.turfbook.backend.dto.ErrorResponse;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import org.springframework.http.HttpStatus;
@@ -25,6 +28,27 @@ import jakarta.annotation.Generated;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.6.0")
 @Validated
 public interface UsersApi {
+
+    /**
+     * PATCH /api/v1/users/me/role : Change own account role (PLAYER ↔ OWNER)
+     * Self-service role change with password re-authentication. Cannot elevate to ADMIN. Returns a fresh JWT with the new role so the change takes effect immediately without requiring a separate login. 
+     *
+     * @param changeRoleRequest  (required)
+     * @return Role changed; new JWT issued (status code 200)
+     *         or No-op (already that role) or invalid target role (status code 400)
+     *         or Wrong password (status code 401)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/api/v1/users/me/role",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    ResponseEntity<AuthResponse> changeMyRole(
+         @Valid @RequestBody ChangeRoleRequest changeRoleRequest
+    );
+
 
     /**
      * GET /api/v1/users/me : Get current user profile

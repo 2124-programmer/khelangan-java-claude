@@ -57,19 +57,37 @@ components:
 
     OtpSendRequest:
       type: object
-      required: [phone]
+      required: [email]
       properties:
-        phone:
+        email:
           type: string
+          format: email
+          description: Account email. Backend looks up the registered phone and sends OTP there.
+
+    OtpSendResponse:
+      type: object
+      properties:
+        maskedDestination:
+          type: string
+          description: Masked phone number showing where the code was sent, e.g. +91•••••3210
+        expiresInSec:
+          type: integer
+          description: Seconds until the OTP expires (300 = 5 min)
+        resendAfterSec:
+          type: integer
+          description: Seconds to wait before requesting a new code (0 = resend allowed now)
 
     OtpVerifyRequest:
       type: object
-      required: [phone, code]
+      required: [email, code]
       properties:
-        phone:
+        email:
           type: string
+          format: email
         code:
           type: string
+          minLength: 6
+          maxLength: 6
 
     ForgotPasswordRequest:
       type: object
@@ -148,6 +166,19 @@ components:
           type: array
           items:
             type: string
+
+    ChangeRoleRequest:
+      type: object
+      required: [targetRole, password]
+      properties:
+        targetRole:
+          type: string
+          enum: [PLAYER, OWNER]
+          description: The role to switch to. ADMIN is not self-assignable.
+        password:
+          type: string
+          minLength: 6
+          description: Current password for re-authentication before role change.
 
     UserPage:
       type: object
@@ -1040,7 +1071,7 @@ paths:
   /api/v1/auth/otp/send:
     post:
       tags: [Auth]
-      summary: Send OTP to phone
+      summary: Request OTP (email → SMS to registered phone)
       operationId: sendOtp
       security: []
       requestBody:
@@ -1051,16 +1082,22 @@ paths:
               $ref: '#/components/schemas/OtpSendRequest'
       responses:
         '200':
-          description: OTP sent
+          description: OTP dispatched (or silently no-op for unknown email to avoid enumeration)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/OtpSendResponse'
+        '400':
+          description: Validation error (missing/invalid email)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/auth/otp/verify:
     post:
       tags: [Auth]
-      summary: Verify OTP
+      summary: Verify OTP and obtain JWT
       operationId: verifyOtp
       security: []
       requestBody:
@@ -1071,11 +1108,17 @@ paths:
               $ref: '#/components/schemas/OtpVerifyRequest'
       responses:
         '200':
-          description: OTP verified
+          description: OTP verified — JWT issued
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid/expired OTP or too many attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/auth/forgot-password:
     post:
@@ -1147,6 +1190,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserDto'
+
+  /api/v1/users/me/role:
+    patch:
+      tags: [Users]
+      summary: Change own account role (PLAYER ↔ OWNER)
+      description: >
+        Self-service role change with password re-authentication.
+        Cannot elevate to ADMIN. Returns a fresh JWT with the new role
+        so the change takes effect immediately without requiring a separate login.
+      operationId: changeMyRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRoleRequest'
+      responses:
+        '200':
+          description: Role changed; new JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: No-op (already that role) or invalid target role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Wrong password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/admin/users:
     get:

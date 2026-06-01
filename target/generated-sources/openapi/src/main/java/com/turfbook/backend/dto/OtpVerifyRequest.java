@@ -22,7 +22,7 @@ public class OtpVerifyRequest implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
-  private String phone;
+  private String email;
 
   private String code;
 
@@ -33,28 +33,28 @@ public class OtpVerifyRequest implements Serializable {
   /**
    * Constructor with only required parameters
    */
-  public OtpVerifyRequest(String phone, String code) {
-    this.phone = phone;
+  public OtpVerifyRequest(String email, String code) {
+    this.email = email;
     this.code = code;
   }
 
-  public OtpVerifyRequest phone(String phone) {
-    this.phone = phone;
+  public OtpVerifyRequest email(String email) {
+    this.email = email;
     return this;
   }
 
   /**
-   * Get phone
-   * @return phone
+   * Get email
+   * @return email
   */
-  @NotNull 
-  @JsonProperty("phone")
-  public String getPhone() {
-    return phone;
+  @NotNull @jakarta.validation.constraints.Email 
+  @JsonProperty("email")
+  public String getEmail() {
+    return email;
   }
 
-  public void setPhone(String phone) {
-    this.phone = phone;
+  public void setEmail(String email) {
+    this.email = email;
   }
 
   public OtpVerifyRequest code(String code) {
@@ -66,7 +66,7 @@ public class OtpVerifyRequest implements Serializable {
    * Get code
    * @return code
   */
-  @NotNull 
+  @NotNull @Size(min = 6, max = 6) 
   @JsonProperty("code")
   public String getCode() {
     return code;
@@ -85,20 +85,20 @@ public class OtpVerifyRequest implements Serializable {
       return false;
     }
     OtpVerifyRequest otpVerifyRequest = (OtpVerifyRequest) o;
-    return Objects.equals(this.phone, otpVerifyRequest.phone) &&
+    return Objects.equals(this.email, otpVerifyRequest.email) &&
         Objects.equals(this.code, otpVerifyRequest.code);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(phone, code);
+    return Objects.hash(email, code);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class OtpVerifyRequest {\n");
-    sb.append("    phone: ").append(toIndentedString(phone)).append("\n");
+    sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    code: ").append(toIndentedString(code)).append("\n");
     sb.append("}");
     return sb.toString();

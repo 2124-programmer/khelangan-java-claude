@@ -25,7 +25,7 @@ public class AuthController implements AuthApi {
     }
 
     @Override
-    public ResponseEntity<MessageResponse> sendOtp(OtpSendRequest request) {
+    public ResponseEntity<OtpSendResponse> sendOtp(OtpSendRequest request) {
         return ResponseEntity.ok(authService.sendOtp(request));
     }
 

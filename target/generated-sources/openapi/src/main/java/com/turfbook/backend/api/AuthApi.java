@@ -11,6 +11,7 @@ import com.turfbook.backend.dto.ForgotPasswordRequest;
 import com.turfbook.backend.dto.LoginRequest;
 import com.turfbook.backend.dto.MessageResponse;
 import com.turfbook.backend.dto.OtpSendRequest;
+import com.turfbook.backend.dto.OtpSendResponse;
 import com.turfbook.backend.dto.OtpVerifyRequest;
 import com.turfbook.backend.dto.RefreshTokenRequest;
 import com.turfbook.backend.dto.RegisterRequest;
@@ -109,10 +110,11 @@ public interface AuthApi {
 
 
     /**
-     * POST /api/v1/auth/otp/send : Send OTP to phone
+     * POST /api/v1/auth/otp/send : Request OTP (email → SMS to registered phone)
      *
      * @param otpSendRequest  (required)
-     * @return OTP sent (status code 200)
+     * @return OTP dispatched (or silently no-op for unknown email to avoid enumeration) (status code 200)
+     *         or Validation error (missing/invalid email) (status code 400)
      */
     @RequestMapping(
         method = RequestMethod.POST,
@@ -121,16 +123,17 @@ public interface AuthApi {
         consumes = { "application/json" }
     )
     
-    ResponseEntity<MessageResponse> sendOtp(
+    ResponseEntity<OtpSendResponse> sendOtp(
          @Valid @RequestBody OtpSendRequest otpSendRequest
     );
 
 
     /**
-     * POST /api/v1/auth/otp/verify : Verify OTP
+     * POST /api/v1/auth/otp/verify : Verify OTP and obtain JWT
      *
      * @param otpVerifyRequest  (required)
-     * @return OTP verified (status code 200)
+     * @return OTP verified — JWT issued (status code 200)
+     *         or Invalid/expired OTP or too many attempts (status code 401)
      */
     @RequestMapping(
         method = RequestMethod.POST,

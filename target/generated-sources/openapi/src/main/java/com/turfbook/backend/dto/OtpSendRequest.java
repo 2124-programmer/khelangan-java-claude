@@ -22,7 +22,7 @@ public class OtpSendRequest implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
-  private String phone;
+  private String email;
 
   public OtpSendRequest() {
     super();
@@ -31,27 +31,27 @@ public class OtpSendRequest implements Serializable {
   /**
    * Constructor with only required parameters
    */
-  public OtpSendRequest(String phone) {
-    this.phone = phone;
+  public OtpSendRequest(String email) {
+    this.email = email;
   }
 
-  public OtpSendRequest phone(String phone) {
-    this.phone = phone;
+  public OtpSendRequest email(String email) {
+    this.email = email;
     return this;
   }
 
   /**
-   * Get phone
-   * @return phone
+   * Account email. Backend looks up the registered phone and sends OTP there.
+   * @return email
   */
-  @NotNull 
-  @JsonProperty("phone")
-  public String getPhone() {
-    return phone;
+  @NotNull @jakarta.validation.constraints.Email 
+  @JsonProperty("email")
+  public String getEmail() {
+    return email;
   }
 
-  public void setPhone(String phone) {
-    this.phone = phone;
+  public void setEmail(String email) {
+    this.email = email;
   }
 
   @Override
@@ -63,19 +63,19 @@ public class OtpSendRequest implements Serializable {
       return false;
     }
     OtpSendRequest otpSendRequest = (OtpSendRequest) o;
-    return Objects.equals(this.phone, otpSendRequest.phone);
+    return Objects.equals(this.email, otpSendRequest.email);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(phone);
+    return Objects.hash(email);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class OtpSendRequest {\n");
-    sb.append("    phone: ").append(toIndentedString(phone)).append("\n");
+    sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("}");
     return sb.toString();
   }
