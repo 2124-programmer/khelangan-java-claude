@@ -1,0 +1,46 @@
+package com.turfbook.backend.mapper;
+
+import com.turfbook.backend.dto.PayoutDto;
+import com.turfbook.backend.entity.PayoutEntity;
+import com.turfbook.backend.entity.UserEntity;
+import javax.annotation.processing.Generated;
+import org.springframework.stereotype.Component;
+
+@Generated(
+    value = "org.mapstruct.ap.MappingProcessor",
+    date = "2026-06-01T23:04:16+0530",
+    comments = "version: 1.6.3, compiler: Eclipse JDT (IDE) 3.46.0.v20260407-0427, environment: Java 21.0.10 (Eclipse Adoptium)"
+)
+@Component
+public class PayoutMapperImpl implements PayoutMapper {
+
+    @Override
+    public PayoutDto toDto(PayoutEntity entity) {
+        if ( entity == null ) {
+            return null;
+        }
+
+        PayoutDto payoutDto = new PayoutDto();
+
+        payoutDto.setOwnerId( entityOwnerId( entity ) );
+        payoutDto.setId( entity.getId() );
+        payoutDto.setOwnerName( entity.getOwnerName() );
+        payoutDto.setAmount( entity.getAmount() );
+        payoutDto.setCommissionDeducted( entity.getCommissionDeducted() );
+        payoutDto.setNetAmount( entity.getNetAmount() );
+        payoutDto.setDate( entity.getDate() );
+
+        payoutDto.setStatus( entity.getStatus().name() );
+        payoutDto.setCreatedAt( entity.getCreatedAt() != null ? entity.getCreatedAt().atOffset(java.time.ZoneOffset.UTC) : null );
+
+        return payoutDto;
+    }
+
+    private Long entityOwnerId(PayoutEntity payoutEntity) {
+        UserEntity owner = payoutEntity.getOwner();
+        if ( owner == null ) {
+            return null;
+        }
+        return owner.getId();
+    }
+}

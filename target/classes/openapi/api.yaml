@@ -1,0 +1,2248 @@
+openapi: 3.0.3
+info:
+  title: TurfBook API
+  description: TurfBook – Sports Venue Booking Marketplace REST API
+  version: 1.0.0
+  contact:
+    name: TurfBook Team
+    email: support@turfbook.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ─── Auth ───────────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [name, email, phone, password, role]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          minLength: 7
+          maxLength: 20
+        password:
+          type: string
+          minLength: 6
+        role:
+          type: string
+          enum: [PLAYER, OWNER]
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    OtpSendRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+
+    OtpVerifyRequest:
+      type: object
+      required: [phone, code]
+      properties:
+        phone:
+          type: string
+        code:
+          type: string
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserDto'
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    # ─── User ───────────────────────────────────────────────────────────────
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+        avatarUrl:
+          type: string
+        preferredSports:
+          type: array
+          items:
+            type: string
+        totalBookings:
+          type: integer
+        isPremium:
+          type: boolean
+        isBlocked:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        phone:
+          type: string
+        avatarUrl:
+          type: string
+        preferredSports:
+          type: array
+          items:
+            type: string
+
+    UserPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Sport ──────────────────────────────────────────────────────────────
+    SportDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        icon:
+          type: string
+
+    CreateSportRequest:
+      type: object
+      required: [name, icon]
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+
+    UpdateSportRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+
+    # ─── Venue ──────────────────────────────────────────────────────────────
+    VenueSummaryDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        status:
+          type: string
+        rating:
+          type: number
+          format: double
+        reviewCount:
+          type: integer
+        pricePerSlot:
+          type: integer
+        coverPhoto:
+          type: string
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+        ownerId:
+          type: integer
+          format: int64
+
+    VenueDetailDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        rating:
+          type: number
+          format: double
+        reviewCount:
+          type: integer
+        pricePerSlot:
+          type: integer
+        coverPhoto:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+        amenities:
+          type: array
+          items:
+            type: string
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+        ownerId:
+          type: integer
+          format: int64
+        sports:
+          type: array
+          items:
+            $ref: '#/components/schemas/SportDto'
+        courts:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourtDto'
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateVenueRequest:
+      type: object
+      required: [name, address, city, pricePerSlot, lat, lng]
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        description:
+          type: string
+        pricePerSlot:
+          type: integer
+        amenities:
+          type: array
+          items:
+            type: string
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+        sportIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+        coverPhoto:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+        courts:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateCourtRequest'
+
+    UpdateVenueRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        pricePerSlot:
+          type: integer
+        amenities:
+          type: array
+          items:
+            type: string
+        coverPhoto:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+
+    VenueStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [PENDING, LIVE, REJECTED, SUSPENDED]
+        rejectionReason:
+          type: string
+
+    VenueSummaryPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueSummaryDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Court ──────────────────────────────────────────────────────────────
+    CourtDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        venueId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        sportId:
+          type: integer
+          format: int64
+        type:
+          type: string
+        pricePerSlot:
+          type: integer
+        peakPrice:
+          type: integer
+
+    CreateCourtRequest:
+      type: object
+      required: [name, sportId, type, pricePerSlot]
+      properties:
+        name:
+          type: string
+        sportId:
+          type: integer
+          format: int64
+        type:
+          type: string
+        pricePerSlot:
+          type: integer
+        peakPrice:
+          type: integer
+          default: 0
+
+    UpdateCourtRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        sportId:
+          type: integer
+          format: int64
+        type:
+          type: string
+        pricePerSlot:
+          type: integer
+        peakPrice:
+          type: integer
+
+    # ─── Slot ───────────────────────────────────────────────────────────────
+    SlotDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        courtId:
+          type: integer
+          format: int64
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        status:
+          type: string
+        price:
+          type: integer
+
+    BulkBlockRequest:
+      type: object
+      required: [date]
+      properties:
+        date:
+          type: string
+          format: date
+
+    # ─── Booking ────────────────────────────────────────────────────────────
+    BookingDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        playerId:
+          type: integer
+          format: int64
+        playerName:
+          type: string
+        venueId:
+          type: integer
+          format: int64
+        venueName:
+          type: string
+        courtId:
+          type: integer
+          format: int64
+        courtName:
+          type: string
+        slotId:
+          type: integer
+          format: int64
+        sport:
+          type: string
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+        endTime:
+          type: string
+        amount:
+          type: integer
+        convenienceFee:
+          type: integer
+        discount:
+          type: integer
+        commission:
+          type: integer
+        status:
+          type: string
+        paymentStatus:
+          type: string
+        couponCode:
+          type: string
+        hasReview:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateBookingRequest:
+      type: object
+      required: [venueId, courtId, slotId, sport]
+      properties:
+        venueId:
+          type: integer
+          format: int64
+        courtId:
+          type: integer
+          format: int64
+        slotId:
+          type: integer
+          format: int64
+        sport:
+          type: string
+        couponCode:
+          type: string
+        paymentMethod:
+          type: string
+          default: CARD
+
+    BookingPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Review ─────────────────────────────────────────────────────────────
+    ReviewDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        bookingId:
+          type: integer
+          format: int64
+        venueId:
+          type: integer
+          format: int64
+        playerId:
+          type: integer
+          format: int64
+        playerName:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: string
+        cleanliness:
+          type: integer
+        ground:
+          type: integer
+        staff:
+          type: integer
+        ownerReply:
+          type: string
+        createdAt:
+          type: string
+          format: date
+
+    CreateReviewRequest:
+      type: object
+      required: [bookingId, rating, comment, cleanliness, ground, staff]
+      properties:
+        bookingId:
+          type: integer
+          format: int64
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        cleanliness:
+          type: integer
+          minimum: 1
+          maximum: 5
+        ground:
+          type: integer
+          minimum: 1
+          maximum: 5
+        staff:
+          type: integer
+          minimum: 1
+          maximum: 5
+
+    ReviewPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Coupon ─────────────────────────────────────────────────────────────
+    CouponDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        discountType:
+          type: string
+        discountValue:
+          type: integer
+        minBooking:
+          type: integer
+        maxDiscount:
+          type: integer
+        validUntil:
+          type: string
+          format: date
+        usedCount:
+          type: integer
+        maxUses:
+          type: integer
+        isActive:
+          type: boolean
+
+    CreateCouponRequest:
+      type: object
+      required: [code, discountType, discountValue, minBooking, validUntil, maxUses]
+      properties:
+        code:
+          type: string
+        discountType:
+          type: string
+          enum: [PERCENT, FLAT]
+        discountValue:
+          type: integer
+        minBooking:
+          type: integer
+        maxDiscount:
+          type: integer
+        validUntil:
+          type: string
+          format: date
+        maxUses:
+          type: integer
+
+    UpdateCouponRequest:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+
+    ValidateCouponRequest:
+      type: object
+      required: [code, bookingAmount]
+      properties:
+        code:
+          type: string
+        bookingAmount:
+          type: integer
+
+    CouponValidationResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        discount:
+          type: integer
+        message:
+          type: string
+
+    CouponPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CouponDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Payout ─────────────────────────────────────────────────────────────
+    PayoutDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        ownerId:
+          type: integer
+          format: int64
+        ownerName:
+          type: string
+        amount:
+          type: integer
+        commissionDeducted:
+          type: integer
+        netAmount:
+          type: integer
+        status:
+          type: string
+        date:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+
+    PayoutPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayoutDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Dispute ────────────────────────────────────────────────────────────
+    DisputeDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        bookingId:
+          type: integer
+          format: int64
+        playerId:
+          type: integer
+          format: int64
+        playerName:
+          type: string
+        ownerId:
+          type: integer
+          format: int64
+        ownerName:
+          type: string
+        venueName:
+          type: string
+        issue:
+          type: string
+        status:
+          type: string
+        resolvedNote:
+          type: string
+        createdAt:
+          type: string
+          format: date
+
+    CreateDisputeRequest:
+      type: object
+      required: [bookingId, issue]
+      properties:
+        bookingId:
+          type: integer
+          format: int64
+        issue:
+          type: string
+
+    ResolveDisputeRequest:
+      type: object
+      required: [resolvedNote]
+      properties:
+        resolvedNote:
+          type: string
+
+    DisputePage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/DisputeDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Notification ────────────────────────────────────────────────────────
+    NotificationDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        body:
+          type: string
+        type:
+          type: string
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    BroadcastRequest:
+      type: object
+      required: [title, body, audience]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        audience:
+          type: string
+          enum: [ALL, PLAYERS, OWNERS]
+
+    NotificationPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationDto'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    # ─── Stats ──────────────────────────────────────────────────────────────
+    AdminStatsDto:
+      type: object
+      properties:
+        bookingsToday:
+          type: integer
+          format: int64
+        revenueToday:
+          type: integer
+          format: int64
+        newUsers:
+          type: integer
+          format: int64
+        activeVenues:
+          type: integer
+          format: int64
+        pendingApprovals:
+          type: integer
+          format: int64
+        openDisputes:
+          type: integer
+          format: int64
+
+    OwnerStatsDto:
+      type: object
+      properties:
+        todayBookings:
+          type: integer
+          format: int64
+        todayRevenue:
+          type: integer
+          format: int64
+        weekRevenue:
+          type: integer
+          format: int64
+        monthRevenue:
+          type: integer
+          format: int64
+        pendingPayout:
+          type: integer
+          format: int64
+
+    # ─── Platform Settings ───────────────────────────────────────────────────
+    PlatformSettingsDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        commissionPercent:
+          type: integer
+        convenienceFee:
+          type: integer
+        maintenanceMode:
+          type: boolean
+        autoApproveVenues:
+          type: boolean
+
+    UpdateSettingsRequest:
+      type: object
+      properties:
+        commissionPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        convenienceFee:
+          type: integer
+          minimum: 0
+        maintenanceMode:
+          type: boolean
+        autoApproveVenues:
+          type: boolean
+
+    # ─── Error ──────────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
+        fieldErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+
+paths:
+  # ─── Auth ─────────────────────────────────────────────────────────────────
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/otp/send:
+    post:
+      tags: [Auth]
+      summary: Send OTP to phone
+      operationId: sendOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpSendRequest'
+      responses:
+        '200':
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/v1/auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: Verify OTP
+      operationId: verifyOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerifyRequest'
+      responses:
+        '200':
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Forgot password
+      operationId: forgotPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh token
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  # ─── Users ────────────────────────────────────────────────────────────────
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getMe
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+    put:
+      tags: [Users]
+      summary: Update current user profile
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+
+  /api/v1/admin/users:
+    get:
+      tags: [Admin]
+      summary: List all users (Admin)
+      operationId: adminListUsers
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+
+  /api/v1/admin/users/{id}/block:
+    patch:
+      tags: [Admin]
+      summary: Block user (Admin)
+      operationId: blockUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Blocked user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+
+  /api/v1/admin/users/{id}/unblock:
+    patch:
+      tags: [Admin]
+      summary: Unblock user (Admin)
+      operationId: unblockUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Unblocked user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+
+  # ─── Sports ───────────────────────────────────────────────────────────────
+  /api/v1/sports:
+    get:
+      tags: [Sports]
+      summary: List all sports
+      operationId: listSports
+      security: []
+      responses:
+        '200':
+          description: List of sports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SportDto'
+
+  /api/v1/admin/sports:
+    post:
+      tags: [Admin]
+      summary: Create sport (Admin)
+      operationId: createSport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSportRequest'
+      responses:
+        '201':
+          description: Created sport
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SportDto'
+
+  /api/v1/admin/sports/{id}:
+    put:
+      tags: [Admin]
+      summary: Update sport (Admin)
+      operationId: updateSport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSportRequest'
+      responses:
+        '200':
+          description: Updated sport
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SportDto'
+    delete:
+      tags: [Admin]
+      summary: Delete sport (Admin)
+      operationId: deleteSport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+
+  # ─── Venues ───────────────────────────────────────────────────────────────
+  /api/v1/venues:
+    get:
+      tags: [Venues]
+      summary: List venues
+      operationId: listVenues
+      security: []
+      parameters:
+        - name: city
+          in: query
+          schema:
+            type: string
+        - name: sport
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of venues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSummaryPage'
+    post:
+      tags: [Venues]
+      summary: Create venue (Owner)
+      operationId: createVenue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVenueRequest'
+      responses:
+        '201':
+          description: Created venue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetailDto'
+
+  /api/v1/venues/{id}:
+    get:
+      tags: [Venues]
+      summary: Get venue detail
+      operationId: getVenue
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Venue detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetailDto'
+        '404':
+          description: Not found
+    put:
+      tags: [Venues]
+      summary: Update venue (Owner)
+      operationId: updateVenue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVenueRequest'
+      responses:
+        '200':
+          description: Updated venue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetailDto'
+
+  /api/v1/venues/{id}/status:
+    patch:
+      tags: [Venues]
+      summary: Update venue status (Admin)
+      operationId: updateVenueStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueStatusRequest'
+      responses:
+        '200':
+          description: Updated venue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetailDto'
+
+  /api/v1/owner/venues:
+    get:
+      tags: [Venues]
+      summary: List owner's venues
+      operationId: listOwnerVenues
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of owner venues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSummaryPage'
+
+  /api/v1/admin/venues:
+    get:
+      tags: [Admin]
+      summary: List all venues (Admin)
+      operationId: adminListVenues
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of venues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSummaryPage'
+
+  # ─── Courts ───────────────────────────────────────────────────────────────
+  /api/v1/venues/{venueId}/courts:
+    get:
+      tags: [Courts]
+      summary: List courts for a venue
+      operationId: listCourts
+      security: []
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: List of courts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourtDto'
+    post:
+      tags: [Courts]
+      summary: Create court (Owner)
+      operationId: createCourt
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCourtRequest'
+      responses:
+        '201':
+          description: Created court
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourtDto'
+
+  /api/v1/venues/{venueId}/courts/{courtId}:
+    put:
+      tags: [Courts]
+      summary: Update court (Owner)
+      operationId: updateCourt
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: courtId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCourtRequest'
+      responses:
+        '200':
+          description: Updated court
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourtDto'
+    delete:
+      tags: [Courts]
+      summary: Delete court (Owner)
+      operationId: deleteCourt
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: courtId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+
+  # ─── Slots ────────────────────────────────────────────────────────────────
+  /api/v1/courts/{courtId}/slots:
+    get:
+      tags: [Slots]
+      summary: List slots for a court on a date
+      operationId: listSlots
+      security: []
+      parameters:
+        - name: courtId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SlotDto'
+
+  /api/v1/courts/{courtId}/slots/bulk-block:
+    post:
+      tags: [Slots]
+      summary: Bulk block all slots for a court on a date (Owner)
+      operationId: bulkBlockSlots
+      parameters:
+        - name: courtId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkBlockRequest'
+      responses:
+        '200':
+          description: List of blocked slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SlotDto'
+
+  /api/v1/slots/{id}/block:
+    patch:
+      tags: [Slots]
+      summary: Block a slot (Owner)
+      operationId: blockSlot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Blocked slot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotDto'
+
+  /api/v1/slots/{id}/unblock:
+    patch:
+      tags: [Slots]
+      summary: Unblock a slot (Owner)
+      operationId: unblockSlot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Unblocked slot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotDto'
+
+  # ─── Bookings ─────────────────────────────────────────────────────────────
+  /api/v1/bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings (role-scoped)
+      operationId: listBookings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPage'
+    post:
+      tags: [Bookings]
+      summary: Create booking (Player)
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: Created booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDto'
+        '409':
+          description: Slot not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get booking by ID
+      operationId: getBooking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDto'
+
+  /api/v1/bookings/{id}/cancel:
+    patch:
+      tags: [Bookings]
+      summary: Cancel booking (Player)
+      operationId: cancelBooking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Cancelled booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDto'
+
+  /api/v1/admin/bookings:
+    get:
+      tags: [Admin]
+      summary: List all bookings (Admin)
+      operationId: adminListBookings
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPage'
+
+  # ─── Reviews ──────────────────────────────────────────────────────────────
+  /api/v1/venues/{venueId}/reviews:
+    get:
+      tags: [Reviews]
+      summary: List reviews for a venue
+      operationId: listVenueReviews
+      security: []
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of reviews
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewPage'
+
+  /api/v1/reviews:
+    post:
+      tags: [Reviews]
+      summary: Submit review (Player)
+      operationId: createReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Created review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewDto'
+
+  /api/v1/owner/reviews:
+    get:
+      tags: [Reviews]
+      summary: List owner venue reviews (Owner)
+      operationId: listOwnerReviews
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of reviews
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewPage'
+
+  # ─── Coupons ──────────────────────────────────────────────────────────────
+  /api/v1/coupons:
+    get:
+      tags: [Coupons]
+      summary: List active coupons (Player)
+      operationId: listCoupons
+      responses:
+        '200':
+          description: List of coupons
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CouponDto'
+
+  /api/v1/coupons/validate:
+    post:
+      tags: [Coupons]
+      summary: Validate coupon code
+      operationId: validateCoupon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateCouponRequest'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponValidationResponse'
+
+  /api/v1/admin/coupons:
+    get:
+      tags: [Admin]
+      summary: List all coupons (Admin)
+      operationId: adminListCoupons
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of coupons
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponPage'
+    post:
+      tags: [Admin]
+      summary: Create coupon (Admin)
+      operationId: createCoupon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCouponRequest'
+      responses:
+        '201':
+          description: Created coupon
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponDto'
+
+  /api/v1/admin/coupons/{id}:
+    patch:
+      tags: [Admin]
+      summary: Update coupon (Admin)
+      operationId: updateCoupon
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCouponRequest'
+      responses:
+        '200':
+          description: Updated coupon
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponDto'
+
+  # ─── Payouts ──────────────────────────────────────────────────────────────
+  /api/v1/owner/payouts:
+    get:
+      tags: [Payouts]
+      summary: List owner payouts (Owner)
+      operationId: listOwnerPayouts
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of payouts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutPage'
+
+  /api/v1/admin/payouts:
+    get:
+      tags: [Admin]
+      summary: List all payouts (Admin)
+      operationId: adminListPayouts
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of payouts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutPage'
+
+  /api/v1/admin/payouts/{id}/process:
+    post:
+      tags: [Admin]
+      summary: Process payout (Admin)
+      operationId: processPayout
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Processed payout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutDto'
+
+  # ─── Disputes ─────────────────────────────────────────────────────────────
+  /api/v1/disputes:
+    get:
+      tags: [Disputes]
+      summary: List disputes (role-scoped)
+      operationId: listDisputes
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of disputes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputePage'
+    post:
+      tags: [Disputes]
+      summary: Create dispute (Player)
+      operationId: createDispute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDisputeRequest'
+      responses:
+        '201':
+          description: Created dispute
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeDto'
+
+  /api/v1/disputes/{id}/resolve:
+    patch:
+      tags: [Disputes]
+      summary: Resolve dispute (Admin)
+      operationId: resolveDispute
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveDisputeRequest'
+      responses:
+        '200':
+          description: Resolved dispute
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeDto'
+
+  # ─── Notifications ────────────────────────────────────────────────────────
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      operationId: listNotifications
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+
+  /api/v1/notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDto'
+
+  /api/v1/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      operationId: markAllNotificationsRead
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/v1/admin/notifications/broadcast:
+    post:
+      tags: [Admin]
+      summary: Broadcast notification (Admin)
+      operationId: broadcastNotification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  # ─── Dashboard Stats ──────────────────────────────────────────────────────
+  /api/v1/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Get admin dashboard stats
+      operationId: getAdminStats
+      responses:
+        '200':
+          description: Admin stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsDto'
+
+  /api/v1/owner/stats:
+    get:
+      tags: [Venues]
+      summary: Get owner dashboard stats
+      operationId: getOwnerStats
+      responses:
+        '200':
+          description: Owner stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerStatsDto'
+
+  # ─── Settings ─────────────────────────────────────────────────────────────
+  /api/v1/admin/settings:
+    get:
+      tags: [Admin]
+      summary: Get platform settings (Admin)
+      operationId: getSettings
+      responses:
+        '200':
+          description: Platform settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettingsDto'
+    put:
+      tags: [Admin]
+      summary: Update platform settings (Admin)
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSettingsRequest'
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettingsDto'
