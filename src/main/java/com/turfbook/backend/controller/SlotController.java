@@ -6,6 +6,7 @@ import com.turfbook.backend.dto.SlotDto;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.VenueService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class SlotController implements SlotsApi {
@@ -22,6 +24,7 @@ public class SlotController implements SlotsApi {
 
     @Override
     public ResponseEntity<List<SlotDto>> listSlots(Long courtId, LocalDate date) {
+        log.info("SlotController.listSlots() called - courtId={}, date={}", courtId, date);
         return ResponseEntity.ok(venueService.listSlots(courtId, date));
     }
 
@@ -29,6 +32,7 @@ public class SlotController implements SlotsApi {
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<SlotDto> blockSlot(Long id) {
         UserPrincipal principal = getPrincipal();
+        log.info("SlotController.blockSlot() called - id={}, ownerId={}", id, principal.getId());
         return ResponseEntity.ok(venueService.blockSlot(id, principal.getId()));
     }
 
@@ -36,6 +40,7 @@ public class SlotController implements SlotsApi {
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<SlotDto> unblockSlot(Long id) {
         UserPrincipal principal = getPrincipal();
+        log.info("SlotController.unblockSlot() called - id={}, ownerId={}", id, principal.getId());
         return ResponseEntity.ok(venueService.unblockSlot(id, principal.getId()));
     }
 
@@ -43,6 +48,7 @@ public class SlotController implements SlotsApi {
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<List<SlotDto>> bulkBlockSlots(Long courtId, BulkBlockRequest request) {
         UserPrincipal principal = getPrincipal();
+        log.info("SlotController.bulkBlockSlots() called - courtId={}, ownerId={}, date={}", courtId, principal.getId(), request.getDate());
         return ResponseEntity.ok(venueService.bulkBlockSlots(courtId, principal.getId(), request));
     }
 

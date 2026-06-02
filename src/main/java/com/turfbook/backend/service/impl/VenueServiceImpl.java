@@ -11,6 +11,7 @@ import com.turfbook.backend.repository.*;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.VenueService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class VenueServiceImpl implements VenueService {
@@ -46,6 +48,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public VenueSummaryPage listVenues(String city, String sport, String search, int page, int size) {
+        log.info("VenueService.listVenues() called - city={}, sport={}, search={}", city, sport, search);
         Pageable pageable = PageRequest.of(page, size);
         String cityParam = StringUtils.hasText(city) ? city : null;
         String sportParam = StringUtils.hasText(sport) ? sport : null;
@@ -59,6 +62,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public VenueDetailDto getVenue(Long id) {
+        log.info("VenueService.getVenue() called - id={}", id);
         VenueEntity venue = venueRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", id));
         return venueMapper.toDetailDto(venue);
@@ -67,6 +71,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public VenueDetailDto createVenue(Long ownerId, CreateVenueRequest request) {
+        log.info("VenueService.createVenue() called - ownerId={}, name={}", ownerId, request.getName());
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
 
@@ -111,6 +116,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public VenueDetailDto updateVenue(Long id, Long ownerId, UpdateVenueRequest request) {
+        log.info("VenueService.updateVenue() called - id={}, ownerId={}", id, ownerId);
         VenueEntity venue = venueRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", id));
 
@@ -131,6 +137,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public VenueDetailDto updateVenueStatus(Long id, VenueStatusRequest request) {
+        log.info("VenueService.updateVenueStatus() called - id={}, status={}", id, request.getStatus());
         VenueEntity venue = venueRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", id));
 
@@ -172,6 +179,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public VenueSummaryPage listOwnerVenues(Long ownerId, int page, int size) {
+        log.info("VenueService.listOwnerVenues() called - ownerId={}", ownerId);
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
         Pageable pageable = PageRequest.of(page, size);
@@ -181,6 +189,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public VenueSummaryPage adminListVenues(int page, int size, String status) {
+        log.info("VenueService.adminListVenues() called - status={}", status);
         Pageable pageable = PageRequest.of(page, size);
         Page<VenueEntity> entityPage;
         if (StringUtils.hasText(status)) {
@@ -201,6 +210,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public List<CourtDto> listCourts(Long venueId) {
+        log.info("VenueService.listCourts() called - venueId={}", venueId);
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
         return courtRepository.findByVenue(venue).stream().map(courtMapper::toDto).toList();
@@ -209,6 +219,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public CourtDto createCourt(Long venueId, Long ownerId, CreateCourtRequest request) {
+        log.info("VenueService.createCourt() called - venueId={}, ownerId={}", venueId, ownerId);
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
         if (!venue.getOwner().getId().equals(ownerId)) {
@@ -220,6 +231,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public CourtDto updateCourt(Long venueId, Long courtId, Long ownerId, UpdateCourtRequest request) {
+        log.info("VenueService.updateCourt() called - venueId={}, courtId={}, ownerId={}", venueId, courtId, ownerId);
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
         if (!venue.getOwner().getId().equals(ownerId)) {
@@ -244,6 +256,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public void deleteCourt(Long venueId, Long courtId, Long ownerId) {
+        log.info("VenueService.deleteCourt() called - venueId={}, courtId={}, ownerId={}", venueId, courtId, ownerId);
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
         if (!venue.getOwner().getId().equals(ownerId)) {
@@ -259,6 +272,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public List<SlotDto> listSlots(Long courtId, LocalDate date) {
+        log.info("VenueService.listSlots() called - courtId={}, date={}", courtId, date);
         CourtEntity court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
         return slotRepository.findByCourtAndDateOrderByStartTime(court, date)
@@ -268,6 +282,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public SlotDto blockSlot(Long slotId, Long ownerId) {
+        log.info("VenueService.blockSlot() called - slotId={}, ownerId={}", slotId, ownerId);
         SlotEntity slot = getSlotOwnedBy(slotId, ownerId);
         slot.setStatus(SlotEntity.SlotStatus.BLOCKED);
         return slotMapper.toDto(slotRepository.save(slot));
@@ -276,6 +291,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public SlotDto unblockSlot(Long slotId, Long ownerId) {
+        log.info("VenueService.unblockSlot() called - slotId={}, ownerId={}", slotId, ownerId);
         SlotEntity slot = getSlotOwnedBy(slotId, ownerId);
         slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
         return slotMapper.toDto(slotRepository.save(slot));
@@ -284,6 +300,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public List<SlotDto> bulkBlockSlots(Long courtId, Long ownerId, BulkBlockRequest request) {
+        log.info("VenueService.bulkBlockSlots() called - courtId={}, ownerId={}, date={}", courtId, ownerId, request.getDate());
         CourtEntity court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
         if (!court.getVenue().getOwner().getId().equals(ownerId)) {
@@ -300,6 +317,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public OwnerStatsDto getOwnerStats(Long ownerId) {
+        log.info("VenueService.getOwnerStats() called - ownerId={}", ownerId);
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
 

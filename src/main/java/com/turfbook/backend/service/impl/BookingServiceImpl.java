@@ -43,6 +43,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public BookingPage listBookings(UserEntity currentUser, String status, int page, int size) {
+        log.info("BookingService.listBookings() called - userId={}, role={}, status={}", currentUser.getId(), currentUser.getRole(), status);
         Pageable pageable = PageRequest.of(page, size);
         BookingEntity.BookingStatus bookingStatus = parseStatus(status);
 
@@ -69,6 +70,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional
     public BookingDto createBooking(Long playerId, CreateBookingRequest request) {
+        log.info("BookingService.createBooking() called - playerId={}, slotId={}, venueId={}", playerId, request.getSlotId(), request.getVenueId());
         // 1. Load player
         UserEntity player = userRepository.findById(playerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
@@ -214,6 +216,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public BookingDto getBooking(Long id, UserEntity currentUser) {
+        log.info("BookingService.getBooking() called - id={}, userId={}", id, currentUser.getId());
         BookingEntity booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", id));
 
@@ -235,6 +238,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional
     public BookingDto cancelBooking(Long id, Long playerId) {
+        log.info("BookingService.cancelBooking() called - id={}, playerId={}", id, playerId);
         // 1. Load booking
         BookingEntity booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", id));
@@ -298,6 +302,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public BookingPage adminListBookings(int page, int size, String status) {
+        log.info("BookingService.adminListBookings() called - status={}", status);
         Pageable pageable = PageRequest.of(page, size);
         BookingEntity.BookingStatus bookingStatus = parseStatus(status);
         Page<BookingEntity> entityPage = bookingRepository.findAllByStatus(bookingStatus, pageable);

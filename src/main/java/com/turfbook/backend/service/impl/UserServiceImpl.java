@@ -13,6 +13,7 @@ import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.security.JwtTokenProvider;
 import com.turfbook.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
@@ -33,12 +35,14 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserDto getMe(Long userId) {
+        log.info("UserService.getMe() called - userId={}", userId);
         return userMapper.toDto(getEntityById(userId));
     }
 
     @Override
     @Transactional
     public UserDto updateMe(Long userId, UpdateProfileRequest request) {
+        log.info("UserService.updateMe() called - userId={}", userId);
         UserEntity user = getEntityById(userId);
 
         if (StringUtils.hasText(request.getName())) {
@@ -54,15 +58,17 @@ public class UserServiceImpl implements UserService {
             user.setPreferredSports(request.getPreferredSports());
         }
 
-        return userMapper.toDto(userRepository.save(user));
+        UserDto result = userMapper.toDto(userRepository.save(user));
+        log.info("UserService.updateMe() completed - userId={}", userId);
+        return result;
     }
 
     @Override
     @Transactional
     public AuthResponse changeRole(Long userId, ChangeRoleRequest request) {
+        log.info("UserService.changeRole() called - userId={}, targetRole={}", userId, request.getTargetRole());
         UserEntity user = getEntityById(userId);
 
-        // Re-authenticate: verify the supplied password against the stored hash
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new UnauthorizedException("Incorrect password");
         }
@@ -74,7 +80,6 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("Invalid role: " + request.getTargetRole());
         }
 
-        // Prevent ADMIN self-assignment and no-op transitions
         if (targetRole == UserEntity.Role.ADMIN) {
             throw new IllegalArgumentException("Cannot self-assign ADMIN role");
         }
@@ -85,19 +90,21 @@ public class UserServiceImpl implements UserService {
         user.setRole(targetRole);
         userRepository.save(user);
 
-        // Issue a fresh JWT with the new role so the client can swap immediately
         String newToken = tokenProvider.generateToken(user.getId(), targetRole.name());
 
         AuthResponse response = new AuthResponse();
         response.setToken(newToken);
         response.setRefreshToken(newToken);
         response.setUser(userMapper.toDto(user));
+
+        log.info("UserService.changeRole() completed - userId={}, newRole={}", userId, targetRole);
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public UserPage listUsers(int page, int size, String role, String search) {
+        log.info("UserService.listUsers() called - page={}, size={}, role={}, search={}", page, size, role, search);
         Pageable pageable = PageRequest.of(page, size);
         UserEntity.Role roleEnum = null;
         if (StringUtils.hasText(role)) {
@@ -115,12 +122,14 @@ public class UserServiceImpl implements UserService {
         dto.setTotalPages(entityPage.getTotalPages());
         dto.setSize(entityPage.getSize());
         dto.setNumber(entityPage.getNumber());
+        log.info("UserService.listUsers() completed - total={}", entityPage.getTotalElements());
         return dto;
     }
 
     @Override
     @Transactional
     public UserDto blockUser(Long id) {
+        log.info("UserService.blockUser() called - id={}", id);
         UserEntity user = getEntityById(id);
         user.setBlocked(true);
         return userMapper.toDto(userRepository.save(user));
@@ -129,6 +138,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserDto unblockUser(Long id) {
+        log.info("UserService.unblockUser() called - id={}", id);
         UserEntity user = getEntityById(id);
         user.setBlocked(false);
         return userMapper.toDto(userRepository.save(user));

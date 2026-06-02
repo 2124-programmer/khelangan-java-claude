@@ -10,6 +10,7 @@ import com.turfbook.backend.repository.OtpRecordRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.security.JwtTokenProvider;
 import com.turfbook.backend.service.AuthService;
+import com.turfbook.backend.util.LogMaskUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -49,6 +50,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest request) {
+        log.info("AuthService.register() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new ConflictException("Email already registered: " + request.getEmail());
         }
@@ -80,12 +82,14 @@ public class AuthServiceImpl implements AuthService {
         response.setToken(token);
         response.setRefreshToken(token); // In production, use a separate refresh token store
         response.setUser(userMapper.toDto(user));
+        log.info("AuthService.register() completed - userId={}, role={}", user.getId(), user.getRole());
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
+        log.info("AuthService.login() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getEmail().toLowerCase().trim(),
@@ -107,6 +111,7 @@ public class AuthServiceImpl implements AuthService {
         response.setToken(token);
         response.setRefreshToken(token);
         response.setUser(userMapper.toDto(user));
+        log.info("AuthService.login() completed - userId={}, role={}", user.getId(), user.getRole());
         return response;
     }
 
@@ -114,6 +119,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public OtpSendResponse sendOtp(OtpSendRequest request) {
         String email = request.getEmail().toLowerCase().trim();
+        log.info("AuthService.sendOtp() called - email={}", LogMaskUtil.maskEmail(email));
         OtpSendResponse response = new OtpSendResponse();
         response.setExpiresInSec(OTP_EXPIRY_SEC);
         response.setResendAfterSec(0);
@@ -155,6 +161,7 @@ public class AuthServiceImpl implements AuthService {
         log.info("[DEV] OTP for {} → {} (remove before prod)", maskPhone(user.getPhone()), otp);
 
         response.setMaskedDestination(maskPhone(user.getPhone()));
+        log.info("AuthService.sendOtp() completed - destination={}", maskPhone(user.getPhone()));
         return response;
     }
 
@@ -162,6 +169,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public AuthResponse verifyOtp(OtpVerifyRequest request) {
         String email = request.getEmail().toLowerCase().trim();
+        log.info("AuthService.verifyOtp() called - email={}", LogMaskUtil.maskEmail(email));
 
         OtpRecordEntity record = otpRecordRepository
                 .findTopByEmailAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(email, LocalDateTime.now())
@@ -197,6 +205,7 @@ public class AuthServiceImpl implements AuthService {
         response.setToken(token);
         response.setRefreshToken(token);
         response.setUser(userMapper.toDto(user));
+        log.info("AuthService.verifyOtp() completed - userId={}, role={}", user.getId(), user.getRole());
         return response;
     }
 
@@ -224,8 +233,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public MessageResponse forgotPassword(ForgotPasswordRequest request) {
-        // TODO: Send password reset email
-        log.info("Password reset requested for email: {}", request.getEmail());
+        log.info("AuthService.forgotPassword() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
         MessageResponse response = new MessageResponse();
         response.setMessage("If an account with this email exists, a password reset link has been sent.");
         return response;
@@ -234,6 +242,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public AuthResponse refreshToken(RefreshTokenRequest request) {
+        log.info("AuthService.refreshToken() called");
         String refreshToken = request.getRefreshToken();
         if (!tokenProvider.validateToken(refreshToken)) {
             throw new UnauthorizedException("Invalid or expired refresh token");

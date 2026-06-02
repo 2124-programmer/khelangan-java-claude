@@ -11,6 +11,7 @@ import com.turfbook.backend.repository.PayoutRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.service.PayoutService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PayoutServiceImpl implements PayoutService {
@@ -29,6 +31,7 @@ public class PayoutServiceImpl implements PayoutService {
     @Override
     @Transactional(readOnly = true)
     public PayoutPage listOwnerPayouts(Long ownerId, int page, int size) {
+        log.info("PayoutService.listOwnerPayouts() called - ownerId={}", ownerId);
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
         Pageable pageable = PageRequest.of(page, size);
@@ -39,6 +42,7 @@ public class PayoutServiceImpl implements PayoutService {
     @Override
     @Transactional(readOnly = true)
     public PayoutPage adminListPayouts(int page, int size, String status) {
+        log.info("PayoutService.adminListPayouts() called - status={}", status);
         Pageable pageable = PageRequest.of(page, size);
         PayoutEntity.PayoutStatus payoutStatus = null;
         if (StringUtils.hasText(status)) {
@@ -54,6 +58,7 @@ public class PayoutServiceImpl implements PayoutService {
     @Override
     @Transactional
     public PayoutDto processPayout(Long id) {
+        log.info("PayoutService.processPayout() called - id={}", id);
         PayoutEntity payout = payoutRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Payout", "id", id));
 
@@ -62,7 +67,9 @@ public class PayoutServiceImpl implements PayoutService {
         }
 
         payout.setStatus(PayoutEntity.PayoutStatus.SETTLED);
-        return payoutMapper.toDto(payoutRepository.save(payout));
+        PayoutDto result = payoutMapper.toDto(payoutRepository.save(payout));
+        log.info("PayoutService.processPayout() completed - id={}, status=SETTLED", id);
+        return result;
     }
 
     private PayoutPage toPayoutPage(Page<PayoutEntity> entityPage) {

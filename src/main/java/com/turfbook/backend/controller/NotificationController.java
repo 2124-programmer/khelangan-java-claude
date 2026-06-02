@@ -7,11 +7,13 @@ import com.turfbook.backend.dto.NotificationPage;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class NotificationController implements NotificationsApi {
@@ -22,6 +24,7 @@ public class NotificationController implements NotificationsApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<NotificationPage> listNotifications(Integer page, Integer size) {
         UserPrincipal principal = getPrincipal();
+        log.info("NotificationController.listNotifications() called - userId={}", principal.getId());
         return ResponseEntity.ok(notificationService.listNotifications(principal.getId(),
                 page != null ? page : 0, size != null ? size : 20));
     }
@@ -30,6 +33,7 @@ public class NotificationController implements NotificationsApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<NotificationDto> markNotificationRead(Long id) {
         UserPrincipal principal = getPrincipal();
+        log.info("NotificationController.markNotificationRead() called - id={}, userId={}", id, principal.getId());
         return ResponseEntity.ok(notificationService.markRead(id, principal.getId()));
     }
 
@@ -37,6 +41,7 @@ public class NotificationController implements NotificationsApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MessageResponse> markAllNotificationsRead() {
         UserPrincipal principal = getPrincipal();
+        log.info("NotificationController.markAllNotificationsRead() called - userId={}", principal.getId());
         return ResponseEntity.ok(notificationService.markAllRead(principal.getId()));
     }
 

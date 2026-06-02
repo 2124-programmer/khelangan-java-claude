@@ -9,12 +9,13 @@ import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.BookingService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class BookingController implements BookingsApi {
@@ -24,20 +25,14 @@ public class BookingController implements BookingsApi {
 
     @Override
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<BookingPage> listBookings(
-            String status,
-            Integer page,
-            Integer size) {
-
+    public ResponseEntity<BookingPage> listBookings(String status, Integer page, Integer size) {
         UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.listBookings() called - userId={}, status={}", principal.getId(), status);
         UserEntity currentUser = getUserEntity(principal.getId());
-
         BookingPage result = bookingService.listBookings(
-                currentUser,
-                status,
+                currentUser, status,
                 page != null ? page : 0,
-                size != null ? size : 20
-        );
+                size != null ? size : 20);
         return ResponseEntity.ok(result);
     }
 
@@ -45,6 +40,8 @@ public class BookingController implements BookingsApi {
     @PreAuthorize("hasRole('PLAYER')")
     public ResponseEntity<BookingDto> createBooking(CreateBookingRequest request) {
         UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.createBooking() called - userId={}, slotId={}, venueId={}",
+                principal.getId(), request.getSlotId(), request.getVenueId());
         BookingDto dto = bookingService.createBooking(principal.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
@@ -53,6 +50,7 @@ public class BookingController implements BookingsApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<BookingDto> getBooking(Long id) {
         UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.getBooking() called - id={}, userId={}", id, principal.getId());
         UserEntity currentUser = getUserEntity(principal.getId());
         BookingDto dto = bookingService.getBooking(id, currentUser);
         return ResponseEntity.ok(dto);
@@ -62,12 +60,10 @@ public class BookingController implements BookingsApi {
     @PreAuthorize("hasRole('PLAYER')")
     public ResponseEntity<BookingDto> cancelBooking(Long id) {
         UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.cancelBooking() called - id={}, userId={}", id, principal.getId());
         BookingDto dto = bookingService.cancelBooking(id, principal.getId());
         return ResponseEntity.ok(dto);
     }
-
-    // ─── Admin endpoint (mapped from AdminApi or handled here via AdminController) ─────
-    // Note: adminListBookings is in AdminController since it's under /api/v1/admin/bookings
 
     private UserPrincipal getCurrentPrincipal() {
         org.springframework.security.core.Authentication auth =

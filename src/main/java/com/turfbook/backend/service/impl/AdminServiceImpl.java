@@ -12,6 +12,7 @@ import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.repository.*;
 import com.turfbook.backend.service.AdminService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminServiceImpl implements AdminService {
@@ -32,13 +34,13 @@ public class AdminServiceImpl implements AdminService {
     @Override
     @Transactional(readOnly = true)
     public AdminStatsDto getAdminStats() {
+        log.info("AdminService.getAdminStats() called");
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         LocalDateTime todayEnd = todayStart.plusDays(1);
 
         long bookingsToday = bookingRepository.countTodayBookings(todayStart, todayEnd);
         long revenueToday = bookingRepository.sumRevenue(todayStart, todayEnd, BookingEntity.PaymentStatus.SUCCESS);
 
-        // New users today
         long newUsers = userRepository.findAll().stream()
                 .filter(u -> u.getCreatedAt() != null
                         && !u.getCreatedAt().isBefore(todayStart)
@@ -56,12 +58,16 @@ public class AdminServiceImpl implements AdminService {
         dto.setActiveVenues(activeVenues);
         dto.setPendingApprovals(pendingApprovals);
         dto.setOpenDisputes(openDisputes);
+
+        log.info("AdminService.getAdminStats() completed - bookingsToday={}, revenueToday={}, openDisputes={}",
+                bookingsToday, revenueToday, openDisputes);
         return dto;
     }
 
     @Override
     @Transactional(readOnly = true)
     public PlatformSettingsDto getSettings() {
+        log.info("AdminService.getSettings() called");
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(this::createDefaultSettings);
         return toDto(settings);
@@ -70,6 +76,7 @@ public class AdminServiceImpl implements AdminService {
     @Override
     @Transactional
     public PlatformSettingsDto updateSettings(UpdateSettingsRequest request) {
+        log.info("AdminService.updateSettings() called");
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(this::createDefaultSettings);
 
@@ -78,7 +85,10 @@ public class AdminServiceImpl implements AdminService {
         if (request.getMaintenanceMode() != null) settings.setMaintenanceMode(request.getMaintenanceMode());
         if (request.getAutoApproveVenues() != null) settings.setAutoApproveVenues(request.getAutoApproveVenues());
 
-        return toDto(settingsRepository.save(settings));
+        PlatformSettingsDto result = toDto(settingsRepository.save(settings));
+        log.info("AdminService.updateSettings() completed - commissionPercent={}, convenienceFee={}",
+                settings.getCommissionPercent(), settings.getConvenienceFee());
+        return result;
     }
 
     private PlatformSettingsEntity createDefaultSettings() {

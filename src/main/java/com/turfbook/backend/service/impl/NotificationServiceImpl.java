@@ -34,6 +34,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public NotificationPage listNotifications(Long userId, int page, int size) {
+        log.info("NotificationService.listNotifications() called - userId={}", userId);
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
         Pageable pageable = PageRequest.of(page, size);
@@ -51,6 +52,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public NotificationDto markRead(Long id, Long userId) {
+        log.info("NotificationService.markRead() called - id={}, userId={}", id, userId);
         NotificationEntity notification = notificationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Notification", "id", id));
 
@@ -65,6 +67,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public MessageResponse markAllRead(Long userId) {
+        log.info("NotificationService.markAllRead() called - userId={}", userId);
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
         int count = notificationRepository.markAllReadByUser(user);
@@ -76,6 +79,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public MessageResponse broadcast(BroadcastRequest request) {
+        log.info("NotificationService.broadcast() called - audience={}", request.getAudience());
         List<UserEntity> targets;
         String audience = request.getAudience() != null ? request.getAudience().toString() : "ALL";
 
@@ -109,6 +113,6 @@ public class NotificationServiceImpl implements NotificationService {
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);
-        log.debug("Notification created for user {}: {}", user.getId(), title);
+        log.info("NotificationService.createNotification() completed - userId={}, title={}", user.getId(), title);
     }
 }

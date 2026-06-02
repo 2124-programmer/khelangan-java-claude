@@ -8,6 +8,7 @@ import com.turfbook.backend.mapper.CouponMapper;
 import com.turfbook.backend.repository.CouponRepository;
 import com.turfbook.backend.service.CouponService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CouponServiceImpl implements CouponService {
@@ -27,6 +29,7 @@ public class CouponServiceImpl implements CouponService {
     @Override
     @Transactional(readOnly = true)
     public List<CouponDto> listActiveCoupons() {
+        log.info("CouponService.listActiveCoupons() called");
         return couponRepository.findActiveCoupons(LocalDate.now())
                 .stream().map(couponMapper::toDto).toList();
     }
@@ -34,6 +37,7 @@ public class CouponServiceImpl implements CouponService {
     @Override
     @Transactional(readOnly = true)
     public CouponValidationResponse validateCoupon(ValidateCouponRequest request) {
+        log.info("CouponService.validateCoupon() called - code={}", request.getCode());
         CouponValidationResponse response = new CouponValidationResponse();
 
         var couponOpt = couponRepository.findByCode(request.getCode().trim().toUpperCase());
@@ -87,12 +91,14 @@ public class CouponServiceImpl implements CouponService {
         response.setValid(true);
         response.setDiscount(discount);
         response.setMessage("Coupon applied successfully! You save ₹" + discount);
+        log.info("CouponService.validateCoupon() completed - code={}, valid=true, discount={}", request.getCode(), discount);
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public CouponPage adminListCoupons(int page, int size) {
+        log.info("CouponService.adminListCoupons() called - page={}, size={}", page, size);
         Pageable pageable = PageRequest.of(page, size);
         Page<CouponEntity> entityPage = couponRepository.findAll(pageable);
         CouponPage dto = new CouponPage();
@@ -108,6 +114,7 @@ public class CouponServiceImpl implements CouponService {
     @Transactional
     public CouponDto createCoupon(CreateCouponRequest request) {
         String code = request.getCode().trim().toUpperCase();
+        log.info("CouponService.createCoupon() called - code={}", code);
         if (couponRepository.existsByCode(code)) {
             throw new ConflictException("Coupon code already exists: " + code);
         }
@@ -130,12 +137,15 @@ public class CouponServiceImpl implements CouponService {
                 .isActive(true)
                 .build();
 
-        return couponMapper.toDto(couponRepository.save(coupon));
+        CouponDto result = couponMapper.toDto(couponRepository.save(coupon));
+        log.info("CouponService.createCoupon() completed - id={}, code={}", result.getId(), code);
+        return result;
     }
 
     @Override
     @Transactional
     public CouponDto updateCoupon(Long id, UpdateCouponRequest request) {
+        log.info("CouponService.updateCoupon() called - id={}", id);
         CouponEntity coupon = couponRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Coupon", "id", id));
         if (request.getIsActive() != null) {

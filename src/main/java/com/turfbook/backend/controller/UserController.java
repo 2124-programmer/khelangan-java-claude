@@ -9,6 +9,7 @@ import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class UserController implements UsersApi {
@@ -26,6 +28,7 @@ public class UserController implements UsersApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserDto> getMe() {
         UserPrincipal principal = getPrincipal();
+        log.info("UserController.getMe() called - userId={}", principal.getId());
         return ResponseEntity.ok(userService.getMe(principal.getId()));
     }
 
@@ -33,6 +36,7 @@ public class UserController implements UsersApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserDto> updateMe(UpdateProfileRequest request) {
         UserPrincipal principal = getPrincipal();
+        log.info("UserController.updateMe() called - userId={}", principal.getId());
         return ResponseEntity.ok(userService.updateMe(principal.getId(), request));
     }
 
@@ -40,6 +44,7 @@ public class UserController implements UsersApi {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AuthResponse> changeMyRole(@Valid @RequestBody ChangeRoleRequest request) {
         UserPrincipal principal = getPrincipal();
+        log.info("UserController.changeMyRole() called - userId={}", principal.getId());
         return ResponseEntity.ok(userService.changeRole(principal.getId(), request));
     }
 

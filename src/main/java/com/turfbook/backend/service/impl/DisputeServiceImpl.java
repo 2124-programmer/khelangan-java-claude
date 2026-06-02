@@ -14,12 +14,14 @@ import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.service.DisputeService;
 import com.turfbook.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DisputeServiceImpl implements DisputeService {
@@ -33,6 +35,7 @@ public class DisputeServiceImpl implements DisputeService {
     @Override
     @Transactional(readOnly = true)
     public DisputePage listDisputes(UserEntity currentUser, int page, int size) {
+        log.info("DisputeService.listDisputes() called - userId={}, role={}", currentUser.getId(), currentUser.getRole());
         Pageable pageable = PageRequest.of(page, size);
         Page<DisputeEntity> entityPage;
 
@@ -48,6 +51,7 @@ public class DisputeServiceImpl implements DisputeService {
     @Override
     @Transactional
     public DisputeDto createDispute(Long playerId, CreateDisputeRequest request) {
+        log.info("DisputeService.createDispute() called - playerId={}, bookingId={}", playerId, request.getBookingId());
         UserEntity player = userRepository.findById(playerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
 
@@ -73,7 +77,6 @@ public class DisputeServiceImpl implements DisputeService {
 
         dispute = disputeRepository.save(dispute);
 
-        // Notify owner
         notificationService.createNotification(
                 owner,
                 "New Dispute Raised",
@@ -82,12 +85,14 @@ public class DisputeServiceImpl implements DisputeService {
                 NotificationEntity.NotificationType.SYSTEM
         );
 
+        log.info("DisputeService.createDispute() completed - disputeId={}", dispute.getId());
         return disputeMapper.toDto(dispute);
     }
 
     @Override
     @Transactional
     public DisputeDto resolveDispute(Long id, ResolveDisputeRequest request) {
+        log.info("DisputeService.resolveDispute() called - id={}", id);
         DisputeEntity dispute = disputeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dispute", "id", id));
 
@@ -95,7 +100,6 @@ public class DisputeServiceImpl implements DisputeService {
         dispute.setResolvedNote(request.getResolvedNote());
         dispute = disputeRepository.save(dispute);
 
-        // Notify both parties
         notificationService.createNotification(
                 dispute.getPlayer(),
                 "Dispute Resolved",
@@ -111,6 +115,7 @@ public class DisputeServiceImpl implements DisputeService {
                 NotificationEntity.NotificationType.SYSTEM
         );
 
+        log.info("DisputeService.resolveDispute() completed - id={}, status=RESOLVED", id);
         return disputeMapper.toDto(dispute);
     }
 

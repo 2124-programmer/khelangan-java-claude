@@ -17,12 +17,14 @@ import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.repository.VenueRepository;
 import com.turfbook.backend.service.ReviewService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReviewServiceImpl implements ReviewService {
@@ -36,6 +38,7 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional(readOnly = true)
     public ReviewPage listVenueReviews(Long venueId, int page, int size) {
+        log.info("ReviewService.listVenueReviews() called - venueId={}", venueId);
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
         Pageable pageable = PageRequest.of(page, size);
@@ -46,23 +49,20 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional
     public ReviewDto createReview(Long playerId, CreateReviewRequest request) {
+        log.info("ReviewService.createReview() called - playerId={}, bookingId={}, rating={}",
+                playerId, request.getBookingId(), request.getRating());
         UserEntity player = userRepository.findById(playerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
 
         BookingEntity booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", request.getBookingId()));
 
-        // Only the booking owner can review
         if (!booking.getPlayer().getId().equals(playerId)) {
             throw new UnauthorizedException("You can only review your own bookings");
         }
-
-        // Business rule: booking must be COMPLETED
         if (booking.getStatus() != BookingEntity.BookingStatus.COMPLETED) {
             throw new ConflictException("You can only review completed bookings");
         }
-
-        // Business rule: cannot review twice
         if (booking.isHasReview()) {
             throw new ConflictException("You have already submitted a review for this booking");
         }
@@ -81,11 +81,9 @@ public class ReviewServiceImpl implements ReviewService {
 
         review = reviewRepository.save(review);
 
-        // Mark booking as reviewed
         booking.setHasReview(true);
         bookingRepository.save(booking);
 
-        // Update venue rating
         VenueEntity venue = booking.getVenue();
         Double avgRating = reviewRepository.avgRatingByVenue(venue);
         long reviewCount = reviewRepository.countByVenue(venue);
@@ -93,12 +91,14 @@ public class ReviewServiceImpl implements ReviewService {
         venue.setReviewCount((int) reviewCount);
         venueRepository.save(venue);
 
+        log.info("ReviewService.createReview() completed - reviewId={}, venueId={}", review.getId(), venue.getId());
         return reviewMapper.toDto(review);
     }
 
     @Override
     @Transactional(readOnly = true)
     public ReviewPage listOwnerReviews(Long ownerId, int page, int size) {
+        log.info("ReviewService.listOwnerReviews() called - ownerId={}", ownerId);
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
         Pageable pageable = PageRequest.of(page, size);

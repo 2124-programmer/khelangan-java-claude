@@ -10,12 +10,14 @@ import com.turfbook.backend.mapper.SportMapper;
 import com.turfbook.backend.repository.SportRepository;
 import com.turfbook.backend.service.SportService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SportServiceImpl implements SportService {
@@ -26,12 +28,14 @@ public class SportServiceImpl implements SportService {
     @Override
     @Transactional(readOnly = true)
     public List<SportDto> listSports() {
+        log.info("SportService.listSports() called");
         return sportRepository.findAll().stream().map(sportMapper::toDto).toList();
     }
 
     @Override
     @Transactional
     public SportDto createSport(CreateSportRequest request) {
+        log.info("SportService.createSport() called - name={}", request.getName());
         if (sportRepository.existsByName(request.getName())) {
             throw new ConflictException("Sport already exists: " + request.getName());
         }
@@ -39,12 +43,15 @@ public class SportServiceImpl implements SportService {
                 .name(request.getName())
                 .icon(request.getIcon())
                 .build();
-        return sportMapper.toDto(sportRepository.save(sport));
+        SportDto result = sportMapper.toDto(sportRepository.save(sport));
+        log.info("SportService.createSport() completed - id={}, name={}", result.getId(), result.getName());
+        return result;
     }
 
     @Override
     @Transactional
     public SportDto updateSport(Long id, UpdateSportRequest request) {
+        log.info("SportService.updateSport() called - id={}", id);
         SportEntity sport = sportRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sport", "id", id));
         if (StringUtils.hasText(request.getName())) {
@@ -59,8 +66,10 @@ public class SportServiceImpl implements SportService {
     @Override
     @Transactional
     public void deleteSport(Long id) {
+        log.info("SportService.deleteSport() called - id={}", id);
         SportEntity sport = sportRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sport", "id", id));
         sportRepository.delete(sport);
+        log.info("SportService.deleteSport() completed - id={}", id);
     }
 }
