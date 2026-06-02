@@ -16,4 +16,8 @@ public interface BookingService {
     BookingDto cancelBooking(Long id, Long playerId);
 
     BookingPage adminListBookings(int page, int size, String status);
+
+    BookingDto acceptBooking(Long bookingId, Long ownerId);
+
+    BookingDto rejectBooking(Long bookingId, Long ownerId);
 }

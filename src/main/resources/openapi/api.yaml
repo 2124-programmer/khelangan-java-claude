@@ -476,7 +476,7 @@ components:
           format: time
         status:
           type: string
-          enum: [AVAILABLE, BOOKED, BLOCKED]
+          enum: [AVAILABLE, BOOKED, BLOCKED, HELD]
         price:
           type: integer
 
@@ -592,6 +592,23 @@ components:
           type: integer
         number:
           type: integer
+
+    # ─── Owner Settings ──────────────────────────────────────────────────────
+    OwnerSettingsDto:
+      type: object
+      properties:
+        autoAcceptBookings:
+          type: boolean
+        pushNotificationsEnabled:
+          type: boolean
+
+    UpdateOwnerSettingsRequest:
+      type: object
+      properties:
+        autoAcceptBookings:
+          type: boolean
+        pushNotificationsEnabled:
+          type: boolean
 
     # ─── Review ─────────────────────────────────────────────────────────────
     ReviewDto:
@@ -1932,6 +1949,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BookingPage'
+
+  /api/v1/bookings/{id}/accept:
+    patch:
+      tags: [Bookings]
+      summary: Accept pending booking request (Owner)
+      operationId: acceptBooking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Accepted booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDto'
+
+  /api/v1/bookings/{id}/reject:
+    patch:
+      tags: [Bookings]
+      summary: Reject pending booking request (Owner)
+      operationId: rejectBooking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Rejected booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDto'
+
+  # ─── Owner Settings ───────────────────────────────────────────────────────
+  /api/v1/owner/settings:
+    get:
+      tags: [OwnerSettings]
+      summary: Get owner booking/notification settings
+      operationId: getOwnerSettings
+      responses:
+        '200':
+          description: Owner settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerSettingsDto'
+    put:
+      tags: [OwnerSettings]
+      summary: Update owner booking/notification settings
+      operationId: updateOwnerSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOwnerSettingsRequest'
+      responses:
+        '200':
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerSettingsDto'
 
   # ─── Reviews ──────────────────────────────────────────────────────────────
   /api/v1/venues/{venueId}/reviews:
