@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <!--
+    Pattern includes correlationId, userId, role from MDC (set by CorrelationIdFilter).
+    MDC keys: correlationId | userId | role
+    Fields absent in a given request appear as "-".
+  -->
+  <property name="LOG_PATTERN"
+            value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} cid=%X{correlationId:--} uid=%X{userId:--} role=%X{role:--} - %msg%n"/>
+
+  <!-- ── Console appender (all environments) ─────────────────────────────── -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${LOG_PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!-- ── Rolling file appender (activate in prod by setting LOG_FILE env var) ─ -->
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_FILE:-logs/turfbook.log}</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>logs/turfbook.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+      <timeBasedFileNamingAndTriggeringPolicy
+          class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+        <maxFileSize>50MB</maxFileSize>
+      </timeBasedFileNamingAndTriggeringPolicy>
+      <maxHistory>30</maxHistory>
+    </rollingPolicy>
+    <encoder>
+      <pattern>${LOG_PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!-- ── dev profile: DEBUG for app code, FILE appender off ──────────────── -->
+  <springProfile name="dev">
+    <logger name="com.turfbook.backend" level="DEBUG"/>
+    <logger name="com.turfbook.backend.logging" level="DEBUG"/>
+    <logger name="org.springframework.security" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="DEBUG"/>
+    <!-- Hibernate parameter binding — shows actual values; DEV ONLY -->
+    <logger name="org.hibernate.orm.jdbc.bind" level="TRACE"/>
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+
+  <!-- ── default / prod profile: INFO, no SQL, rolling file on ───────────── -->
+  <springProfile name="!dev">
+    <logger name="com.turfbook.backend" level="INFO"/>
+    <logger name="com.turfbook.backend.logging" level="INFO"/>
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+      <appender-ref ref="FILE"/>
+    </root>
+  </springProfile>
+
+</configuration>
