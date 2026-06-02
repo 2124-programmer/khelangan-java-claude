@@ -127,10 +127,12 @@ public class AuthServiceImpl implements AuthService {
         Optional<UserEntity> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
             // Constant-time response for unknown emails — don't reveal whether account exists.
+            log.info("AuthService.sendOtp() - no account found for email={}", LogMaskUtil.maskEmail(email));
             response.setMaskedDestination("••••••••");
             return response;
         }
         UserEntity user = userOpt.get();
+        log.info("AuthService.sendOtp() - account found for email={}, phone={}", LogMaskUtil.maskEmail(email), maskPhone(user.getPhone()));
 
         // Rate-limit: prevent re-send within the cooldown window.
         Optional<OtpRecordEntity> recent = otpRecordRepository.findTopByEmailOrderByCreatedAtDesc(email);
