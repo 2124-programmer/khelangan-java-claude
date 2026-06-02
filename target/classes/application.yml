@@ -62,11 +62,7 @@ springdoc:
   show-actuator: false
 
 logging:
-  # Per-logger levels here are fallback defaults.
-  # logback-spring.xml overrides them per Spring profile (dev vs prod).
-  # To activate dev profile: --spring.profiles.active=dev
   level:
     com.turfbook.backend: INFO
-    com.turfbook.backend.logging: INFO
     org.springframework.security: WARN
     org.hibernate.SQL: WARN

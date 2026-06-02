@@ -3,7 +3,6 @@ package com.turfbook.backend.service.impl;
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.OtpRecordEntity;
 import com.turfbook.backend.entity.UserEntity;
-import com.turfbook.backend.util.LogMaskUtil;
 import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.UserMapper;
@@ -74,7 +73,6 @@ public class AuthServiceImpl implements AuthService {
                 .build();
 
         user = userRepository.save(user);
-        log.info("event=USER_REGISTERED userId={} role={}", user.getId(), user.getRole());
 
         String token = tokenProvider.generateToken(user.getId(), user.getRole().name());
 
@@ -88,7 +86,6 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
-        log.info("event=LOGIN_ATTEMPT email={}", LogMaskUtil.maskEmail(request.getEmail()));
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getEmail().toLowerCase().trim(),
@@ -105,7 +102,6 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String token = tokenProvider.generateToken(user.getId(), user.getRole().name());
-        log.info("event=USER_LOGIN userId={} role={}", user.getId(), user.getRole());
 
         AuthResponse response = new AuthResponse();
         response.setToken(token);
@@ -125,7 +121,6 @@ public class AuthServiceImpl implements AuthService {
         Optional<UserEntity> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
             // Constant-time response for unknown emails — don't reveal whether account exists.
-            log.debug("event=OTP_REQUEST_UNKNOWN_EMAIL");
             response.setMaskedDestination("••••••••");
             return response;
         }
@@ -137,7 +132,6 @@ public class AuthServiceImpl implements AuthService {
             long secondsAgo = ChronoUnit.SECONDS.between(recent.get().getCreatedAt(), LocalDateTime.now());
             if (secondsAgo < OTP_RESEND_SEC) {
                 int remaining = (int) (OTP_RESEND_SEC - secondsAgo);
-                log.warn("event=OTP_RATE_LIMITED userId={} resendAfterSec={}", user.getId(), remaining);
                 response.setMaskedDestination(maskPhone(user.getPhone()));
                 response.setResendAfterSec(remaining);
                 return response;
@@ -157,9 +151,8 @@ public class AuthServiceImpl implements AuthService {
         otpRecord = Objects.requireNonNull(otpRecordRepository.save(otpRecord));
 
         // TODO: Deliver via SMS provider (Twilio / AWS SNS / MSG91) to user.getPhone().
-        log.info("event=OTP_REQUESTED userId={} destination={}", user.getId(), maskPhone(user.getPhone()));
-        // DEV-ONLY: remove before prod
-        log.debug("[DEV] OTP code for userId={} → {}", user.getId(), otp);
+        // Never log the raw OTP in production; the log below is for local dev only.
+        log.info("[DEV] OTP for {} → {} (remove before prod)", maskPhone(user.getPhone()), otp);
 
         response.setMaskedDestination(maskPhone(user.getPhone()));
         return response;
@@ -177,7 +170,6 @@ public class AuthServiceImpl implements AuthService {
         if (record.getAttempts() >= OTP_MAX_ATTEMPTS) {
             record.setUsed(true);
             otpRecordRepository.save(record);
-            log.warn("event=OTP_MAX_ATTEMPTS_EXCEEDED email={}", LogMaskUtil.maskEmail(email));
             throw new UnauthorizedException("Too many incorrect attempts. Please request a new code.");
         }
 
@@ -186,8 +178,6 @@ public class AuthServiceImpl implements AuthService {
         if (!sha256Hex(request.getCode()).equals(record.getCodeHash())) {
             otpRecordRepository.save(record);
             int remaining = OTP_MAX_ATTEMPTS - record.getAttempts();
-            log.warn("event=OTP_INVALID_CODE email={} attemptsUsed={} remaining={}",
-                    LogMaskUtil.maskEmail(email), record.getAttempts(), remaining);
             throw new UnauthorizedException(remaining > 0
                     ? "Incorrect code. " + remaining + " attempt(s) remaining."
                     : "Incorrect code. No attempts remaining — please request a new code.");
@@ -203,8 +193,6 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String token = tokenProvider.generateToken(user.getId(), user.getRole().name());
-        log.info("event=OTP_VERIFIED userId={} role={}", user.getId(), user.getRole());
-
         AuthResponse response = new AuthResponse();
         response.setToken(token);
         response.setRefreshToken(token);
