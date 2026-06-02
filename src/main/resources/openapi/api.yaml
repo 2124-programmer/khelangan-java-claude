@@ -476,8 +476,22 @@ components:
           format: time
         status:
           type: string
+          enum: [AVAILABLE, BOOKED, BLOCKED]
         price:
           type: integer
+
+    CourtSlotsDto:
+      type: object
+      properties:
+        courtId:
+          type: integer
+          format: int64
+        courtName:
+          type: string
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/SlotDto'
 
     BulkBlockRequest:
       type: object
@@ -1655,6 +1669,53 @@ paths:
           description: Deleted
 
   # ─── Slots ────────────────────────────────────────────────────────────────
+  /api/v1/venues/{venueId}/slots:
+    get:
+      tags: [Slots]
+      summary: List slots grouped by court for a venue on a date
+      operationId: listVenueSlots
+      security: []
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: sportId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Courts with their slots for the given date and optional sport filter
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourtSlotsDto'
+        '400':
+          description: Missing or invalid date parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Venue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/courts/{courtId}/slots:
     get:
       tags: [Slots]

@@ -30,6 +30,8 @@ public interface VenueService {
     // Slots
     java.util.List<SlotDto> listSlots(Long courtId, java.time.LocalDate date);
 
+    java.util.List<CourtSlotsDto> listSlotsByVenue(Long venueId, java.time.LocalDate date, Long sportId);
+
     SlotDto blockSlot(Long slotId, Long ownerId);
 
     SlotDto unblockSlot(Long slotId, Long ownerId);

@@ -2,6 +2,7 @@ package com.turfbook.backend.controller;
 
 import com.turfbook.backend.api.SlotsApi;
 import com.turfbook.backend.dto.BulkBlockRequest;
+import com.turfbook.backend.dto.CourtSlotsDto;
 import com.turfbook.backend.dto.SlotDto;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.VenueService;
@@ -26,6 +27,12 @@ public class SlotController implements SlotsApi {
     public ResponseEntity<List<SlotDto>> listSlots(Long courtId, LocalDate date) {
         log.info("SlotController.listSlots() called - courtId={}, date={}", courtId, date);
         return ResponseEntity.ok(venueService.listSlots(courtId, date));
+    }
+
+    @Override
+    public ResponseEntity<List<CourtSlotsDto>> listVenueSlots(Long venueId, LocalDate date, Long sportId) {
+        log.info("SlotController.listVenueSlots() called - venueId={}, date={}, sportId={}", venueId, date, sportId);
+        return ResponseEntity.ok(venueService.listSlotsByVenue(venueId, date, sportId));
     }
 
     @Override

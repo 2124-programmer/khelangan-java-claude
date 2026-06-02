@@ -280,6 +280,32 @@ public class VenueServiceImpl implements VenueService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<CourtSlotsDto> listSlotsByVenue(Long venueId, LocalDate date, Long sportId) {
+        log.info("VenueService.listSlotsByVenue() called - venueId={}, date={}, sportId={}", venueId, date, sportId);
+        VenueEntity venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
+
+        List<CourtEntity> courts = courtRepository.findByVenue(venue);
+        if (sportId != null) {
+            courts = courts.stream()
+                    .filter(c -> c.getSport().getId().equals(sportId))
+                    .toList();
+        }
+
+        return courts.stream().map(court -> {
+            List<SlotDto> slots = slotRepository
+                    .findByCourtAndDateOrderByStartTime(court, date)
+                    .stream().map(slotMapper::toDto).toList();
+            CourtSlotsDto dto = new CourtSlotsDto();
+            dto.setCourtId(court.getId());
+            dto.setCourtName(court.getName());
+            dto.setSlots(slots);
+            return dto;
+        }).toList();
+    }
+
+    @Override
     @Transactional
     public SlotDto blockSlot(Long slotId, Long ownerId) {
         log.info("VenueService.blockSlot() called - slotId={}, ownerId={}", slotId, ownerId);
