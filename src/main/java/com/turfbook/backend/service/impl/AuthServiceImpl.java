@@ -26,6 +26,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -142,11 +143,12 @@ public class AuthServiceImpl implements AuthService {
         String hash = sha256Hex(otp);
 
         otpRecordRepository.deleteAllByEmail(email);
-        otpRecordRepository.save(OtpRecordEntity.builder()
+        OtpRecordEntity otpRecord = OtpRecordEntity.builder()
                 .email(email)
                 .codeHash(hash)
                 .expiresAt(LocalDateTime.now().plusSeconds(OTP_EXPIRY_SEC))
-                .build());
+                .build();
+        otpRecord = Objects.requireNonNull(otpRecordRepository.save(otpRecord));
 
         // TODO: Deliver via SMS provider (Twilio / AWS SNS / MSG91) to user.getPhone().
         // Never log the raw OTP in production; the log below is for local dev only.
