@@ -239,6 +239,10 @@ components:
           type: string
         city:
           type: string
+        state:
+          type: string
+        pincode:
+          type: string
         status:
           type: string
         rating:
@@ -246,8 +250,19 @@ components:
           format: double
         reviewCount:
           type: integer
-        pricePerSlot:
+        pricePerHour:
           type: integer
+          description: Venue-level default price per hour (₹)
+        openTime:
+          type: string
+          description: First bookable hour in HH:00 format (e.g. "05:00")
+          example: "05:00"
+        closeTime:
+          type: string
+          description: Last slot ends at this hour in HH:00 format (e.g. "23:00")
+          example: "23:00"
+        isActive:
+          type: boolean
         coverPhoto:
           type: string
         lat:
@@ -272,7 +287,15 @@ components:
           type: string
         city:
           type: string
+        state:
+          type: string
+        pincode:
+          type: string
         description:
+          type: string
+        contactPhone:
+          type: string
+        contactEmail:
           type: string
         status:
           type: string
@@ -281,8 +304,19 @@ components:
           format: double
         reviewCount:
           type: integer
-        pricePerSlot:
+        pricePerHour:
           type: integer
+          description: Venue-level default price per hour (₹)
+        openTime:
+          type: string
+          description: First bookable hour in HH:00 format
+          example: "05:00"
+        closeTime:
+          type: string
+          description: Last slot ends at this hour in HH:00 format
+          example: "23:00"
+        isActive:
+          type: boolean
         coverPhoto:
           type: string
         photos:
@@ -316,18 +350,43 @@ components:
 
     CreateVenueRequest:
       type: object
-      required: [name, address, city, pricePerSlot, lat, lng]
+      required: [name, address, city, pricePerHour, openTime, closeTime, contactPhone, sportIds]
       properties:
         name:
           type: string
+          maxLength: 200
         address:
           type: string
+          description: Street address / line 1
         city:
           type: string
+        state:
+          type: string
+        pincode:
+          type: string
+          description: 6-digit Indian postal code
+          pattern: '^\d{6}$'
         description:
           type: string
-        pricePerSlot:
+        contactPhone:
+          type: string
+          description: 10-digit Indian mobile number
+          pattern: '^[6-9]\d{9}$'
+        contactEmail:
+          type: string
+          format: email
+        openTime:
+          type: string
+          description: Opening hour in HH:00 format; minutes must be 00
+          example: "05:00"
+        closeTime:
+          type: string
+          description: Closing hour in HH:00 format; must be after openTime
+          example: "23:00"
+        pricePerHour:
           type: integer
+          minimum: 0
+          description: Default price per hour in ₹
         amenities:
           type: array
           items:
@@ -340,6 +399,7 @@ components:
           format: double
         sportIds:
           type: array
+          minItems: 1
           items:
             type: integer
             format: int64
@@ -349,6 +409,9 @@ components:
           type: array
           items:
             type: string
+        isActive:
+          type: boolean
+          default: true
         courts:
           type: array
           items:
@@ -361,8 +424,26 @@ components:
           type: string
         description:
           type: string
-        pricePerSlot:
+        contactPhone:
+          type: string
+          pattern: '^[6-9]\d{9}$'
+        contactEmail:
+          type: string
+          format: email
+        state:
+          type: string
+        pincode:
+          type: string
+          pattern: '^\d{6}$'
+        openTime:
+          type: string
+          example: "05:00"
+        closeTime:
+          type: string
+          example: "23:00"
+        pricePerHour:
           type: integer
+          minimum: 0
         amenities:
           type: array
           items:
@@ -373,6 +454,8 @@ components:
           type: array
           items:
             type: string
+        isActive:
+          type: boolean
 
     VenueStatusRequest:
       type: object
@@ -418,27 +501,75 @@ components:
           format: int64
         type:
           type: string
-        pricePerSlot:
+        pricePerHour:
           type: integer
+          nullable: true
+          description: Court price per hour. null means inherit from venue.
         peakPrice:
           type: integer
+        openTime:
+          type: string
+          nullable: true
+          description: Court open time HH:00. null means inherit from venue.
+          example: "06:00"
+        closeTime:
+          type: string
+          nullable: true
+          description: Court close time HH:00. null means inherit from venue.
+          example: "22:00"
+        slotDurationMins:
+          type: integer
+          default: 60
+        isActive:
+          type: boolean
+        effectivePricePerHour:
+          type: integer
+          readOnly: true
+          description: Resolved price (court override or venue default)
+        effectiveOpenTime:
+          type: string
+          readOnly: true
+        effectiveCloseTime:
+          type: string
+          readOnly: true
 
     CreateCourtRequest:
       type: object
-      required: [name, sportId, type, pricePerSlot]
+      required: [name, sportId]
       properties:
         name:
           type: string
+          maxLength: 100
         sportId:
           type: integer
           format: int64
+          description: Must be one of the parent venue's sportsOffered
         type:
           type: string
-        pricePerSlot:
+        openTime:
+          type: string
+          nullable: true
+          description: Override open time HH:00. Omit or null to inherit venue hours.
+          example: "06:00"
+        closeTime:
+          type: string
+          nullable: true
+          description: Override close time HH:00. Omit or null to inherit venue hours.
+          example: "22:00"
+        pricePerHour:
           type: integer
+          nullable: true
+          minimum: 0
+          description: Override price per hour. Omit or null to inherit venue price.
         peakPrice:
           type: integer
           default: 0
+        slotDurationMins:
+          type: integer
+          default: 60
+        isActive:
+          type: boolean
+          default: true
 
     UpdateCourtRequest:
       type: object
@@ -450,10 +581,22 @@ components:
           format: int64
         type:
           type: string
-        pricePerSlot:
+        openTime:
+          type: string
+          nullable: true
+        closeTime:
+          type: string
+          nullable: true
+        pricePerHour:
           type: integer
+          nullable: true
+          minimum: 0
         peakPrice:
           type: integer
+        slotDurationMins:
+          type: integer
+        isActive:
+          type: boolean
 
     # ─── Slot ───────────────────────────────────────────────────────────────
     SlotDto:
