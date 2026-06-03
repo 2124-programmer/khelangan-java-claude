@@ -274,6 +274,14 @@ components:
         ownerId:
           type: integer
           format: int64
+        sports:
+          type: array
+          items:
+            $ref: '#/components/schemas/SportDto'
+        amenities:
+          type: array
+          items:
+            type: string
 
     VenueDetailDto:
       type: object
