@@ -448,6 +448,21 @@ components:
           type: array
           items:
             type: string
+        address:
+          type: string
+        city:
+          type: string
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+        sportIds:
+          type: array
+          items:
+            type: integer
+            format: int64
         coverPhoto:
           type: string
         photos:

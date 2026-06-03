@@ -39,10 +39,18 @@ spring:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 20MB
+
 app:
   jwt:
     secret: ${JWT_SECRET:turfbook-super-secret-key-change-in-production-must-be-256-bits-long-enough}
     expiration-ms: 86400000  # 24 hours
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  base-url: ${BASE_URL:http://192.168.1.5:8080}
 
 server:
   port: 8080

@@ -158,6 +158,8 @@ public class VenueServiceImpl implements VenueService {
             venue.setName(request.getName());
         }
         if (StringUtils.hasText(request.getDescription())) venue.setDescription(request.getDescription());
+        if (StringUtils.hasText(request.getAddress())) venue.setAddress(request.getAddress());
+        if (StringUtils.hasText(request.getCity())) venue.setCity(request.getCity());
         if (StringUtils.hasText(request.getContactPhone())) venue.setContactPhone(request.getContactPhone());
         if (StringUtils.hasText(request.getContactEmail())) venue.setContactEmail(request.getContactEmail());
         if (StringUtils.hasText(request.getState())) venue.setState(request.getState());
@@ -168,6 +170,12 @@ public class VenueServiceImpl implements VenueService {
         if (request.getAmenities() != null) venue.setAmenities(request.getAmenities());
         if (request.getCoverPhoto() != null) venue.setCoverPhoto(request.getCoverPhoto());
         if (request.getPhotos() != null) venue.setPhotos(request.getPhotos());
+        if (request.getSportIds() != null && !request.getSportIds().isEmpty()) {
+            venue.setSports(resolveSports(request.getSportIds()));
+        }
+        if (request.getLat() != null) venue.setLat(request.getLat());
+        if (request.getLng() != null) venue.setLng(request.getLng());
+        if (request.getIsActive() != null) venue.setActive(request.getIsActive());
 
         return venueMapper.toDetailDto(venueRepository.save(venue));
     }

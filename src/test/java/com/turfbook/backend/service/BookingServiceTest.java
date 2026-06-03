@@ -73,7 +73,7 @@ class BookingServiceTest {
                 .name("Test Turf")
                 .address("123 Main St")
                 .city("Mumbai")
-                .pricePerSlot(500)
+                .pricePerHour(500)
                 .status(VenueEntity.VenueStatus.LIVE)
                 .build();
 
@@ -82,7 +82,7 @@ class BookingServiceTest {
                 .venue(venue)
                 .name("Court A")
                 .type("OUTDOOR")
-                .pricePerSlot(500)
+                .pricePerHour(500)
                 .peakPrice(700)
                 .build();
 

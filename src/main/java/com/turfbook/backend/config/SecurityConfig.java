@@ -70,6 +70,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/courts/{courtId}/slots").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/venues/{venueId}/slots").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/venues/{venueId}/reviews").permitAll()
+                // Uploaded venue images (public)
+                .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                 // Swagger / OpenAPI
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/api-docs").permitAll()
                 // All other endpoints require authentication
