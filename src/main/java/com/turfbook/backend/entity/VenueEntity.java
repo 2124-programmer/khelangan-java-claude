@@ -35,14 +35,42 @@ public class VenueEntity {
     @Column(nullable = false, length = 200)
     private String name;
 
+    /** Street address / line 1. Stored in the legacy "address" column. */
     @Column(nullable = false, length = 500)
     private String address;
 
     @Column(nullable = false, length = 100)
     private String city;
 
+    @Column(length = 100)
+    private String state;
+
+    @Column(length = 10)
+    private String pincode;
+
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "contact_phone", length = 15)
+    private String contactPhone;
+
+    @Column(name = "contact_email", length = 255)
+    private String contactEmail;
+
+    /** First bookable hour, "HH:00" format (e.g. "05:00"). */
+    @Column(name = "open_time", nullable = false, length = 5)
+    @Builder.Default
+    private String openTime = "05:00";
+
+    /** Last slot ends at this hour, "HH:00" format (e.g. "23:00"). */
+    @Column(name = "close_time", nullable = false, length = 5)
+    @Builder.Default
+    private String closeTime = "23:00";
+
+    /** Venue-level default price per hour (₹, integer ≥ 0). */
+    @Column(name = "price_per_hour", nullable = false)
+    @Builder.Default
+    private int pricePerHour = 0;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -56,10 +84,6 @@ public class VenueEntity {
     @Column(name = "review_count", nullable = false)
     @Builder.Default
     private int reviewCount = 0;
-
-    @Column(name = "price_per_slot", nullable = false)
-    @Builder.Default
-    private int pricePerSlot = 0;
 
     @Column(name = "cover_photo", length = 500)
     private String coverPhoto;
@@ -81,6 +105,10 @@ public class VenueEntity {
     @Column(nullable = false)
     @Builder.Default
     private double lng = 0.0;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean isActive = true;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

@@ -2,6 +2,7 @@ package com.turfbook.backend.service.impl;
 
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.*;
+import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.CourtMapper;
@@ -75,34 +76,44 @@ public class VenueServiceImpl implements VenueService {
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
 
-        Set<SportEntity> sports = new HashSet<>();
-        if (request.getSportIds() != null) {
-            for (Long sportId : request.getSportIds()) {
-                SportEntity sport = sportRepository.findById(sportId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Sport", "id", sportId));
-                sports.add(sport);
-            }
+        validateVenueRequest(request.getName(), request.getOpenTime(), request.getCloseTime(),
+                request.getPricePerHour(), request.getContactPhone(), request.getContactEmail(),
+                request.getPincode());
+
+        if (venueRepository.existsByOwnerAndName(owner, request.getName())) {
+            throw new ConflictException("You already have a venue named '" + request.getName() + "'");
         }
+
+        Set<SportEntity> sports = resolveSports(request.getSportIds());
+
+        String openTime  = request.getOpenTime()  != null ? request.getOpenTime()  : "05:00";
+        String closeTime = request.getCloseTime() != null ? request.getCloseTime() : "23:00";
 
         VenueEntity venue = VenueEntity.builder()
                 .owner(owner)
                 .name(request.getName())
                 .address(request.getAddress())
                 .city(request.getCity())
+                .state(request.getState())
+                .pincode(request.getPincode())
                 .description(request.getDescription())
-                .pricePerSlot(request.getPricePerSlot() != null ? request.getPricePerSlot() : 0)
+                .contactPhone(request.getContactPhone())
+                .contactEmail(request.getContactEmail())
+                .openTime(openTime)
+                .closeTime(closeTime)
+                .pricePerHour(request.getPricePerHour() != null ? request.getPricePerHour() : 0)
                 .amenities(request.getAmenities() != null ? request.getAmenities() : new ArrayList<>())
                 .lat(request.getLat() != null ? request.getLat() : 0.0)
                 .lng(request.getLng() != null ? request.getLng() : 0.0)
                 .coverPhoto(request.getCoverPhoto())
                 .photos(request.getPhotos() != null ? request.getPhotos() : new ArrayList<>())
                 .sports(sports)
+                .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .status(VenueEntity.VenueStatus.PENDING)
                 .build();
 
         venue = venueRepository.save(venue);
 
-        // Create courts if provided
         if (request.getCourts() != null) {
             for (CreateCourtRequest courtReq : request.getCourts()) {
                 createCourtInternal(venue, courtReq);
@@ -124,9 +135,36 @@ public class VenueServiceImpl implements VenueService {
             throw new UnauthorizedException("You do not own this venue");
         }
 
-        if (StringUtils.hasText(request.getName())) venue.setName(request.getName());
+        // Validate fields being updated
+        String newOpenTime  = StringUtils.hasText(request.getOpenTime())  ? request.getOpenTime()  : venue.getOpenTime();
+        String newCloseTime = StringUtils.hasText(request.getCloseTime()) ? request.getCloseTime() : venue.getCloseTime();
+        validateTimeFormat(newOpenTime, "openTime");
+        validateTimeFormat(newCloseTime, "closeTime");
+        validateTimeWindow(newOpenTime, newCloseTime);
+        if (request.getPricePerHour() != null && request.getPricePerHour() < 0) {
+            throw new IllegalArgumentException("pricePerHour must be ≥ 0");
+        }
+        if (StringUtils.hasText(request.getContactPhone())) {
+            validatePhone(request.getContactPhone());
+        }
+        if (StringUtils.hasText(request.getPincode())) {
+            validatePincode(request.getPincode());
+        }
+
+        if (StringUtils.hasText(request.getName()) && !request.getName().equals(venue.getName())) {
+            if (venueRepository.existsByOwnerAndNameAndIdNot(venue.getOwner(), request.getName(), id)) {
+                throw new ConflictException("You already have a venue named '" + request.getName() + "'");
+            }
+            venue.setName(request.getName());
+        }
         if (StringUtils.hasText(request.getDescription())) venue.setDescription(request.getDescription());
-        if (request.getPricePerSlot() != null) venue.setPricePerSlot(request.getPricePerSlot());
+        if (StringUtils.hasText(request.getContactPhone())) venue.setContactPhone(request.getContactPhone());
+        if (StringUtils.hasText(request.getContactEmail())) venue.setContactEmail(request.getContactEmail());
+        if (StringUtils.hasText(request.getState())) venue.setState(request.getState());
+        if (StringUtils.hasText(request.getPincode())) venue.setPincode(request.getPincode());
+        if (StringUtils.hasText(request.getOpenTime())) venue.setOpenTime(request.getOpenTime());
+        if (StringUtils.hasText(request.getCloseTime())) venue.setCloseTime(request.getCloseTime());
+        if (request.getPricePerHour() != null) venue.setPricePerHour(request.getPricePerHour());
         if (request.getAmenities() != null) venue.setAmenities(request.getAmenities());
         if (request.getCoverPhoto() != null) venue.setCoverPhoto(request.getCoverPhoto());
         if (request.getPhotos() != null) venue.setPhotos(request.getPhotos());
@@ -143,7 +181,6 @@ public class VenueServiceImpl implements VenueService {
 
         VenueEntity.VenueStatus newStatus;
         try {
-            // Generated enum value() or name() returns the string value
             String statusStr = request.getStatus() != null ? request.getStatus().toString() : "";
             newStatus = VenueEntity.VenueStatus.valueOf(statusStr);
         } catch (Exception e) {
@@ -154,7 +191,6 @@ public class VenueServiceImpl implements VenueService {
         venue.setStatus(newStatus);
         venue = venueRepository.save(venue);
 
-        // Notifications to owner
         if (newStatus == VenueEntity.VenueStatus.LIVE && oldStatus == VenueEntity.VenueStatus.PENDING) {
             notificationService.createNotification(
                     venue.getOwner(),
@@ -240,14 +276,53 @@ public class VenueServiceImpl implements VenueService {
         CourtEntity court = courtRepository.findByIdAndVenue(courtId, venue)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
 
-        if (StringUtils.hasText(request.getName())) court.setName(request.getName());
-        if (request.getPricePerSlot() != null) court.setPricePerSlot(request.getPricePerSlot());
-        if (request.getPeakPrice() != null) court.setPeakPrice(request.getPeakPrice());
-        if (request.getType() != null) court.setType(request.getType());
+        if (StringUtils.hasText(request.getName()) && !request.getName().equals(court.getName())) {
+            if (courtRepository.existsByVenueAndNameAndIdNot(venue, request.getName(), courtId)) {
+                throw new ConflictException("This venue already has a court named '" + request.getName() + "'");
+            }
+            court.setName(request.getName());
+        }
         if (request.getSportId() != null) {
             SportEntity sport = sportRepository.findById(request.getSportId())
                     .orElseThrow(() -> new ResourceNotFoundException("Sport", "id", request.getSportId()));
+            validateCourtSport(venue, sport);
             court.setSport(sport);
+        }
+        if (request.getType() != null) court.setType(request.getType());
+        if (request.getPeakPrice() != null) court.setPeakPrice(request.getPeakPrice());
+        if (request.getIsActive() != null) court.setActive(request.getIsActive());
+        if (request.getSlotDurationMins() != null) court.setSlotDurationMins(request.getSlotDurationMins());
+
+        // Handle time overrides — explicit null means "revert to inherit"
+        if (request.getOpenTime() != null || request.getCloseTime() != null) {
+            String newOpen  = request.getOpenTime()  != null ? request.getOpenTime()  : court.getOpenTime();
+            String newClose = request.getCloseTime() != null ? request.getCloseTime() : court.getCloseTime();
+            // Empty string = revert to inherit
+            if ("".equals(newOpen)) {
+                court.setOpenTime(null);
+            } else if (StringUtils.hasText(newOpen)) {
+                validateTimeFormat(newOpen, "openTime");
+                court.setOpenTime(newOpen);
+            }
+            if ("".equals(newClose)) {
+                court.setCloseTime(null);
+            } else if (StringUtils.hasText(newClose)) {
+                validateTimeFormat(newClose, "closeTime");
+                court.setCloseTime(newClose);
+            }
+            // Validate final window vs venue
+            String effectiveOpen  = court.getOpenTime()  != null ? court.getOpenTime()  : venue.getOpenTime();
+            String effectiveClose = court.getCloseTime() != null ? court.getCloseTime() : venue.getCloseTime();
+            validateTimeWindow(effectiveOpen, effectiveClose);
+            if (court.getOpenTime() != null || court.getCloseTime() != null) {
+                validateCourtTimeWithinVenue(court.getOpenTime(), court.getCloseTime(), venue);
+            }
+        }
+
+        // pricePerHour: null string from request means "revert to inherit"
+        if (request.getPricePerHour() != null) {
+            if (request.getPricePerHour() < 0) throw new IllegalArgumentException("pricePerHour must be ≥ 0");
+            court.setPricePerHour(request.getPricePerHour());
         }
 
         return courtMapper.toDto(courtRepository.save(court));
@@ -280,9 +355,34 @@ public class VenueServiceImpl implements VenueService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<CourtSlotsDto> listSlotsByVenue(Long venueId, LocalDate date, Long sportId) {
+        log.info("VenueService.listSlotsByVenue() called - venueId={}, date={}, sportId={}", venueId, date, sportId);
+        VenueEntity venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
+
+        List<CourtEntity> courts = courtRepository.findByVenue(venue);
+        if (sportId != null) {
+            courts = courts.stream()
+                    .filter(c -> c.getSport().getId().equals(sportId))
+                    .toList();
+        }
+
+        return courts.stream().map(court -> {
+            List<SlotDto> slots = slotRepository
+                    .findByCourtAndDateOrderByStartTime(court, date)
+                    .stream().map(slotMapper::toDto).toList();
+            CourtSlotsDto dto = new CourtSlotsDto();
+            dto.setCourtId(court.getId());
+            dto.setCourtName(court.getName());
+            dto.setSlots(slots);
+            return dto;
+        }).toList();
+    }
+
+    @Override
     @Transactional
     public SlotDto blockSlot(Long slotId, Long ownerId) {
-        log.info("VenueService.blockSlot() called - slotId={}, ownerId={}", slotId, ownerId);
         SlotEntity slot = getSlotOwnedBy(slotId, ownerId);
         slot.setStatus(SlotEntity.SlotStatus.BLOCKED);
         return slotMapper.toDto(slotRepository.save(slot));
@@ -291,7 +391,6 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public SlotDto unblockSlot(Long slotId, Long ownerId) {
-        log.info("VenueService.unblockSlot() called - slotId={}, ownerId={}", slotId, ownerId);
         SlotEntity slot = getSlotOwnedBy(slotId, ownerId);
         slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
         return slotMapper.toDto(slotRepository.save(slot));
@@ -300,7 +399,7 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional
     public List<SlotDto> bulkBlockSlots(Long courtId, Long ownerId, BulkBlockRequest request) {
-        log.info("VenueService.bulkBlockSlots() called - courtId={}, ownerId={}, date={}", courtId, ownerId, request.getDate());
+        log.info("VenueService.bulkBlockSlots() called - courtId={}, ownerId={}", courtId, ownerId);
         CourtEntity court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
         if (!court.getVenue().getOwner().getId().equals(ownerId)) {
@@ -322,17 +421,14 @@ public class VenueServiceImpl implements VenueService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
 
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
-        LocalDateTime todayEnd = todayStart.plusDays(1);
-        LocalDateTime weekStart = LocalDate.now().minusDays(7).atStartOfDay();
+        LocalDateTime todayEnd   = todayStart.plusDays(1);
+        LocalDateTime weekStart  = LocalDate.now().minusDays(7).atStartOfDay();
         LocalDateTime monthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
 
         long todayBookings = bookingRepository.countByOwnerAndDateRange(owner, todayStart, todayEnd);
-        long todayRevenue = bookingRepository.sumRevenueByOwnerAndDateRange(
-                owner, todayStart, todayEnd, BookingEntity.PaymentStatus.SUCCESS);
-        long weekRevenue = bookingRepository.sumRevenueByOwnerAndDateRange(
-                owner, weekStart, todayEnd, BookingEntity.PaymentStatus.SUCCESS);
-        long monthRevenue = bookingRepository.sumRevenueByOwnerAndDateRange(
-                owner, monthStart, todayEnd, BookingEntity.PaymentStatus.SUCCESS);
+        long todayRevenue  = bookingRepository.sumRevenueByOwnerAndDateRange(owner, todayStart, todayEnd, BookingEntity.PaymentStatus.SUCCESS);
+        long weekRevenue   = bookingRepository.sumRevenueByOwnerAndDateRange(owner, weekStart,  todayEnd, BookingEntity.PaymentStatus.SUCCESS);
+        long monthRevenue  = bookingRepository.sumRevenueByOwnerAndDateRange(owner, monthStart, todayEnd, BookingEntity.PaymentStatus.SUCCESS);
         long pendingPayout = payoutRepository.sumPendingByOwner(owner, PayoutEntity.PayoutStatus.PENDING);
 
         OwnerStatsDto dto = new OwnerStatsDto();
@@ -350,16 +446,136 @@ public class VenueServiceImpl implements VenueService {
         SportEntity sport = sportRepository.findById(req.getSportId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sport", "id", req.getSportId()));
 
+        validateCourtSport(venue, sport);
+
+        if (courtRepository.existsByVenueAndName(venue, req.getName())) {
+            throw new ConflictException("This venue already has a court named '" + req.getName() + "'");
+        }
+
+        // Validate custom times when provided
+        if (req.getOpenTime() != null || req.getCloseTime() != null) {
+            if (req.getOpenTime() != null)  validateTimeFormat(req.getOpenTime(), "openTime");
+            if (req.getCloseTime() != null) validateTimeFormat(req.getCloseTime(), "closeTime");
+            String effectiveOpen  = req.getOpenTime()  != null ? req.getOpenTime()  : venue.getOpenTime();
+            String effectiveClose = req.getCloseTime() != null ? req.getCloseTime() : venue.getCloseTime();
+            validateTimeWindow(effectiveOpen, effectiveClose);
+            validateCourtTimeWithinVenue(req.getOpenTime(), req.getCloseTime(), venue);
+        }
+
+        if (req.getPricePerHour() != null && req.getPricePerHour() < 0) {
+            throw new IllegalArgumentException("pricePerHour must be ≥ 0");
+        }
+
         CourtEntity court = CourtEntity.builder()
                 .venue(venue)
                 .name(req.getName())
                 .sport(sport)
                 .type(req.getType())
-                .pricePerSlot(req.getPricePerSlot() != null ? req.getPricePerSlot() : 0)
+                .openTime(req.getOpenTime())
+                .closeTime(req.getCloseTime())
+                .pricePerHour(req.getPricePerHour())
                 .peakPrice(req.getPeakPrice() != null ? req.getPeakPrice() : 0)
+                .slotDurationMins(req.getSlotDurationMins() != null ? req.getSlotDurationMins() : 60)
+                .isActive(req.getIsActive() != null ? req.getIsActive() : true)
                 .build();
 
         return courtRepository.save(court);
+    }
+
+    /**
+     * Validates all venue-level fields: time format, window, price, phone, email, pincode.
+     */
+    private void validateVenueRequest(String name, String openTime, String closeTime,
+                                       Integer pricePerHour, String contactPhone,
+                                       String contactEmail, String pincode) {
+        if (!StringUtils.hasText(name)) throw new IllegalArgumentException("name is required");
+        String open  = StringUtils.hasText(openTime)  ? openTime  : "05:00";
+        String close = StringUtils.hasText(closeTime) ? closeTime : "23:00";
+        validateTimeFormat(open, "openTime");
+        validateTimeFormat(close, "closeTime");
+        validateTimeWindow(open, close);
+        if (pricePerHour != null && pricePerHour < 0) throw new IllegalArgumentException("pricePerHour must be ≥ 0");
+        if (StringUtils.hasText(contactPhone))  validatePhone(contactPhone);
+        if (StringUtils.hasText(contactEmail))  validateEmail(contactEmail);
+        if (StringUtils.hasText(pincode))       validatePincode(pincode);
+    }
+
+    /** Time must match HH:00 where HH is 00–23. */
+    private void validateTimeFormat(String time, String field) {
+        if (!StringUtils.hasText(time)) return;
+        if (!time.matches("^([01]\\d|2[0-3]):00$")) {
+            throw new IllegalArgumentException(field + " must be on the hour in HH:00 format (e.g. 06:00). Got: " + time);
+        }
+    }
+
+    /** closeTime hour must be strictly greater than openTime hour. */
+    private void validateTimeWindow(String openTime, String closeTime) {
+        int open  = Integer.parseInt(openTime.split(":")[0]);
+        int close = Integer.parseInt(closeTime.split(":")[0]);
+        if (close <= open) {
+            throw new IllegalArgumentException("closeTime (" + closeTime + ") must be after openTime (" + openTime + ")");
+        }
+    }
+
+    /** Court custom times must fall within the venue's open/close window. */
+    private void validateCourtTimeWithinVenue(String courtOpen, String courtClose, VenueEntity venue) {
+        int venueOpen  = Integer.parseInt(venue.getOpenTime().split(":")[0]);
+        int venueClose = Integer.parseInt(venue.getCloseTime().split(":")[0]);
+        if (courtOpen != null) {
+            int co = Integer.parseInt(courtOpen.split(":")[0]);
+            if (co < venueOpen) {
+                throw new IllegalArgumentException(
+                        "Court openTime (" + courtOpen + ") cannot be earlier than venue openTime (" + venue.getOpenTime() + ")");
+            }
+        }
+        if (courtClose != null) {
+            int cc = Integer.parseInt(courtClose.split(":")[0]);
+            if (cc > venueClose) {
+                throw new IllegalArgumentException(
+                        "Court closeTime (" + courtClose + ") cannot be later than venue closeTime (" + venue.getCloseTime() + ")");
+            }
+        }
+    }
+
+    /** Court sport must be one of the venue's offered sports. */
+    private void validateCourtSport(VenueEntity venue, SportEntity sport) {
+        boolean offered = venue.getSports().stream()
+                .anyMatch(s -> s.getId().equals(sport.getId()));
+        if (!offered) {
+            throw new IllegalArgumentException(
+                    "Sport '" + sport.getName() + "' is not offered at this venue. "
+                            + "Add it to the venue's sports first.");
+        }
+    }
+
+    private void validatePhone(String phone) {
+        if (!phone.matches("^[6-9]\\d{9}$")) {
+            throw new IllegalArgumentException("contactPhone must be a valid 10-digit Indian mobile number");
+        }
+    }
+
+    private void validateEmail(String email) {
+        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("contactEmail is not a valid email address");
+        }
+    }
+
+    private void validatePincode(String pincode) {
+        if (!pincode.matches("^\\d{6}$")) {
+            throw new IllegalArgumentException("pincode must be exactly 6 digits");
+        }
+    }
+
+    private Set<SportEntity> resolveSports(List<Long> sportIds) {
+        Set<SportEntity> sports = new HashSet<>();
+        if (sportIds != null) {
+            for (Long sportId : sportIds) {
+                SportEntity sport = sportRepository.findById(sportId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Sport", "id", sportId));
+                sports.add(sport);
+            }
+        }
+        return sports;
     }
 
     private SlotEntity getSlotOwnedBy(Long slotId, Long ownerId) {

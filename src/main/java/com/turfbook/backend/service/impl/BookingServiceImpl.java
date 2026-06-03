@@ -11,6 +11,7 @@ import com.turfbook.backend.mapper.BookingMapper;
 import com.turfbook.backend.repository.*;
 import com.turfbook.backend.service.BookingService;
 import com.turfbook.backend.service.NotificationService;
+import com.turfbook.backend.service.OwnerSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -37,6 +38,7 @@ public class BookingServiceImpl implements BookingService {
     private final PlatformSettingsRepository settingsRepository;
     private final NotificationService notificationService;
     private final BookingMapper bookingMapper;
+    private final OwnerSettingsService ownerSettingsService;
 
     // ─── listBookings ──────────────────────────────────────────────────────
 
@@ -71,6 +73,7 @@ public class BookingServiceImpl implements BookingService {
     @Transactional
     public BookingDto createBooking(Long playerId, CreateBookingRequest request) {
         log.info("BookingService.createBooking() called - playerId={}, slotId={}, venueId={}", playerId, request.getSlotId(), request.getVenueId());
+
         // 1. Load player
         UserEntity player = userRepository.findById(playerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
@@ -90,17 +93,15 @@ public class BookingServiceImpl implements BookingService {
         CourtEntity court = courtRepository.findById(request.getCourtId())
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", request.getCourtId()));
 
-        // Verify court belongs to the requested venue
         if (!court.getVenue().getId().equals(venue.getId())) {
             throw new IllegalArgumentException("Court does not belong to the specified venue");
         }
 
-        // Verify slot belongs to the requested court
         if (!slot.getCourt().getId().equals(court.getId())) {
             throw new IllegalArgumentException("Slot does not belong to the specified court");
         }
 
-        // 4. Get platform settings for convenienceFee and commissionPercent
+        // 4. Platform settings
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(() -> PlatformSettingsEntity.builder()
                         .id(1L)
@@ -113,7 +114,7 @@ public class BookingServiceImpl implements BookingService {
         int discount = 0;
         String couponCode = null;
 
-        // 5. If couponCode provided, validate and compute discount
+        // 5. Coupon
         if (StringUtils.hasText(request.getCouponCode())) {
             var couponOpt = couponRepository.findByCode(request.getCouponCode().trim().toUpperCase());
             if (couponOpt.isPresent()) {
@@ -130,14 +131,11 @@ public class BookingServiceImpl implements BookingService {
                         if (coupon.getMaxDiscount() != null && discount > coupon.getMaxDiscount()) {
                             discount = coupon.getMaxDiscount();
                         }
-                    } else { // FLAT
+                    } else {
                         discount = coupon.getDiscountValue();
-                        if (discount > baseAmount) {
-                            discount = baseAmount;
-                        }
+                        if (discount > baseAmount) discount = baseAmount;
                     }
 
-                    // Increment coupon usage
                     coupon.setUsedCount(coupon.getUsedCount() + 1);
                     couponRepository.save(coupon);
                     couponCode = coupon.getCode();
@@ -145,15 +143,22 @@ public class BookingServiceImpl implements BookingService {
             }
         }
 
-        // 6. Compute totals
+        // 6. Totals
         int effectiveAmount = slotPrice + convenienceFee - discount;
         int commission = (effectiveAmount * settings.getCommissionPercent()) / 100;
 
-        // 7. Lock the slot
-        slot.setStatus(SlotEntity.SlotStatus.BOOKED);
+        // 7. Determine initial status based on owner's auto-accept setting
+        UserEntity owner = venue.getOwner();
+        boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId());
+
+        if (autoAccept) {
+            slot.setStatus(SlotEntity.SlotStatus.BOOKED);
+        } else {
+            slot.setStatus(SlotEntity.SlotStatus.HELD);
+        }
         slotRepository.save(slot);
 
-        // 8. Create and save booking
+        // 8. Create booking
         BookingEntity booking = BookingEntity.builder()
                 .player(player)
                 .venue(venue)
@@ -167,46 +172,55 @@ public class BookingServiceImpl implements BookingService {
                 .convenienceFee(convenienceFee)
                 .discount(discount)
                 .commission(commission)
-                .status(BookingEntity.BookingStatus.CONFIRMED)
-                .paymentStatus(BookingEntity.PaymentStatus.SUCCESS) // Payment simulation
+                .status(autoAccept ? BookingEntity.BookingStatus.CONFIRMED : BookingEntity.BookingStatus.PENDING)
+                .paymentStatus(autoAccept ? BookingEntity.PaymentStatus.SUCCESS : BookingEntity.PaymentStatus.PENDING)
                 .couponCode(couponCode)
                 .hasReview(false)
                 .build();
 
         booking = bookingRepository.save(booking);
 
-        // 9. Increment user totalBookings
-        player.setTotalBookings(player.getTotalBookings() + 1);
-        userRepository.save(player);
+        // 9. Increment totalBookings only on immediate confirmation
+        if (autoAccept) {
+            player.setTotalBookings(player.getTotalBookings() + 1);
+            userRepository.save(player);
+        }
 
-        // 10. Create notification for player: "Booking Confirmed"
-        notificationService.createNotification(
-                player,
-                "Booking Confirmed",
-                String.format("Your booking at %s on %s (%s – %s) is confirmed. Amount paid: ₹%d",
-                        venue.getName(),
-                        slot.getDate(),
-                        slot.getStartTime(),
-                        slot.getEndTime(),
-                        effectiveAmount),
-                NotificationEntity.NotificationType.BOOKING
-        );
+        // 10. Notifications
+        if (autoAccept) {
+            notificationService.createNotification(
+                    player,
+                    "Booking Confirmed",
+                    String.format("Your booking at %s on %s (%s – %s) is confirmed. Amount paid: ₹%d",
+                            venue.getName(), slot.getDate(), slot.getStartTime(), slot.getEndTime(), effectiveAmount),
+                    NotificationEntity.NotificationType.BOOKING
+            );
+            notificationService.createNotification(
+                    owner,
+                    "New Booking Received",
+                    String.format("New booking by %s at %s on %s. Amount: ₹%d",
+                            player.getName(), venue.getName(), slot.getDate(), effectiveAmount),
+                    NotificationEntity.NotificationType.BOOKING
+            );
+        } else {
+            notificationService.createNotification(
+                    player,
+                    "Booking Request Sent",
+                    String.format("Your booking request at %s on %s (%s – %s) has been sent. Awaiting owner approval.",
+                            venue.getName(), slot.getDate(), slot.getStartTime(), slot.getEndTime()),
+                    NotificationEntity.NotificationType.BOOKING
+            );
+            notificationService.createNotification(
+                    owner,
+                    "New Booking Request",
+                    String.format("%s has requested to book %s at %s on %s. Please accept or reject.",
+                            player.getName(), court.getName(), venue.getName(), slot.getDate()),
+                    NotificationEntity.NotificationType.BOOKING
+            );
+        }
 
-        // 11. Create notification for venue owner: "New Booking"
-        UserEntity owner = venue.getOwner();
-        notificationService.createNotification(
-                owner,
-                "New Booking Received",
-                String.format("New booking by %s at %s on %s. Amount: ₹%d",
-                        player.getName(),
-                        venue.getName(),
-                        slot.getDate(),
-                        effectiveAmount),
-                NotificationEntity.NotificationType.BOOKING
-        );
-
-        log.info("Booking created: id={}, player={}, venue={}, amount={}",
-                 booking.getId(), playerId, venue.getId(), effectiveAmount);
+        log.info("Booking created: id={}, player={}, venue={}, status={}, amount={}",
+                booking.getId(), playerId, venue.getId(), booking.getStatus(), effectiveAmount);
 
         return bookingMapper.toDto(booking);
     }
@@ -220,7 +234,6 @@ public class BookingServiceImpl implements BookingService {
         BookingEntity booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", id));
 
-        // Access control: player can only see own bookings; owner can see bookings for their venues
         if (currentUser.getRole() == UserEntity.Role.PLAYER
                 && !booking.getPlayer().getId().equals(currentUser.getId())) {
             throw new UnauthorizedException("You do not have access to this booking");
@@ -239,50 +252,43 @@ public class BookingServiceImpl implements BookingService {
     @Transactional
     public BookingDto cancelBooking(Long id, Long playerId) {
         log.info("BookingService.cancelBooking() called - id={}, playerId={}", id, playerId);
-        // 1. Load booking
         BookingEntity booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", id));
 
-        // Verify the booking belongs to the current player
         if (!booking.getPlayer().getId().equals(playerId)) {
             throw new UnauthorizedException("You can only cancel your own bookings");
         }
 
-        // 2. Verify status is CONFIRMED (not already cancelled/completed)
-        if (booking.getStatus() != BookingEntity.BookingStatus.CONFIRMED) {
+        if (booking.getStatus() != BookingEntity.BookingStatus.CONFIRMED
+                && booking.getStatus() != BookingEntity.BookingStatus.PENDING) {
             throw new ConflictException(
                     "Cannot cancel booking with status: " + booking.getStatus() +
-                    ". Only CONFIRMED bookings can be cancelled.");
+                    ". Only CONFIRMED or PENDING bookings can be cancelled.");
         }
 
-        // 3. Compute hours until the slot starts
-        LocalDateTime slotDateTime = LocalDateTime.of(booking.getDate(), booking.getStartTime());
-        long hoursUntilSlot = ChronoUnit.HOURS.between(LocalDateTime.now(), slotDateTime);
-
-        if (hoursUntilSlot >= 24) {
-            // Full refund
-            booking.setPaymentStatus(BookingEntity.PaymentStatus.REFUNDED);
-            log.info("Booking {} cancelled with FULL REFUND ({}h until slot)", id, hoursUntilSlot);
-        } else if (hoursUntilSlot >= 12) {
-            // 50% refund — we still mark as REFUNDED (partial handled at payout level)
-            booking.setPaymentStatus(BookingEntity.PaymentStatus.REFUNDED);
-            log.info("Booking {} cancelled with PARTIAL REFUND ({}h until slot)", id, hoursUntilSlot);
+        // PENDING cancellation: no payment was taken, so no refund calculation needed
+        if (booking.getStatus() == BookingEntity.BookingStatus.PENDING) {
+            booking.setPaymentStatus(BookingEntity.PaymentStatus.PENDING);
         } else {
-            // No refund — payment status stays SUCCESS
-            log.info("Booking {} cancelled with NO REFUND ({}h until slot)", id, hoursUntilSlot);
+            // Refund logic based on hours until slot
+            LocalDateTime slotDateTime = LocalDateTime.of(booking.getDate(), booking.getStartTime());
+            long hoursUntilSlot = ChronoUnit.HOURS.between(LocalDateTime.now(), slotDateTime);
+            if (hoursUntilSlot >= 12) {
+                booking.setPaymentStatus(BookingEntity.PaymentStatus.REFUNDED);
+                log.info("Booking {} cancelled with REFUND ({}h until slot)", id, hoursUntilSlot);
+            } else {
+                log.info("Booking {} cancelled with NO REFUND ({}h until slot)", id, hoursUntilSlot);
+            }
         }
 
-        // 4. Update booking status
         booking.setStatus(BookingEntity.BookingStatus.CANCELLED);
 
-        // 5. Free the slot
         SlotEntity slot = booking.getSlot();
         slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
         slotRepository.save(slot);
 
         booking = bookingRepository.save(booking);
 
-        // Notify the player
         notificationService.createNotification(
                 booking.getPlayer(),
                 "Booking Cancelled",
@@ -294,6 +300,87 @@ public class BookingServiceImpl implements BookingService {
                 NotificationEntity.NotificationType.BOOKING
         );
 
+        return bookingMapper.toDto(booking);
+    }
+
+    // ─── acceptBooking ─────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public BookingDto acceptBooking(Long bookingId, Long ownerId) {
+        log.info("BookingService.acceptBooking() called - bookingId={}, ownerId={}", bookingId, ownerId);
+        BookingEntity booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", bookingId));
+
+        if (booking.getStatus() != BookingEntity.BookingStatus.PENDING) {
+            throw new ConflictException("Only PENDING bookings can be accepted. Current status: " + booking.getStatus());
+        }
+
+        if (!booking.getVenue().getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+
+        booking.setStatus(BookingEntity.BookingStatus.CONFIRMED);
+        booking.setPaymentStatus(BookingEntity.PaymentStatus.SUCCESS);
+
+        SlotEntity slot = booking.getSlot();
+        slot.setStatus(SlotEntity.SlotStatus.BOOKED);
+        slotRepository.save(slot);
+
+        UserEntity player = booking.getPlayer();
+        player.setTotalBookings(player.getTotalBookings() + 1);
+        userRepository.save(player);
+
+        booking = bookingRepository.save(booking);
+
+        notificationService.createNotification(
+                player,
+                "Booking Confirmed",
+                String.format("Your booking request at %s on %s (%s – %s) has been accepted. Amount: ₹%d",
+                        booking.getVenue().getName(), booking.getDate(),
+                        booking.getStartTime(), booking.getEndTime(), booking.getAmount()),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        log.info("Booking {} accepted by owner {}", bookingId, ownerId);
+        return bookingMapper.toDto(booking);
+    }
+
+    // ─── rejectBooking ─────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public BookingDto rejectBooking(Long bookingId, Long ownerId) {
+        log.info("BookingService.rejectBooking() called - bookingId={}, ownerId={}", bookingId, ownerId);
+        BookingEntity booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", bookingId));
+
+        if (booking.getStatus() != BookingEntity.BookingStatus.PENDING) {
+            throw new ConflictException("Only PENDING bookings can be rejected. Current status: " + booking.getStatus());
+        }
+
+        if (!booking.getVenue().getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+
+        booking.setStatus(BookingEntity.BookingStatus.REJECTED);
+        booking.setPaymentStatus(BookingEntity.PaymentStatus.FAILED);
+
+        SlotEntity slot = booking.getSlot();
+        slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+        slotRepository.save(slot);
+
+        booking = bookingRepository.save(booking);
+
+        notificationService.createNotification(
+                booking.getPlayer(),
+                "Booking Request Rejected",
+                String.format("Your booking request at %s on %s was not accepted by the owner.",
+                        booking.getVenue().getName(), booking.getDate()),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        log.info("Booking {} rejected by owner {}", bookingId, ownerId);
         return bookingMapper.toDto(booking);
     }
 
@@ -312,9 +399,7 @@ public class BookingServiceImpl implements BookingService {
     // ─── Private helpers ───────────────────────────────────────────────────
 
     private BookingEntity.BookingStatus parseStatus(String status) {
-        if (!StringUtils.hasText(status)) {
-            return null;
-        }
+        if (!StringUtils.hasText(status)) return null;
         try {
             return BookingEntity.BookingStatus.valueOf(status.toUpperCase());
         } catch (IllegalArgumentException e) {

@@ -75,4 +75,8 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             LocalDate date,
             BookingEntity.BookingStatus status
     );
+
+    // PENDING bookings whose 24-hour acceptance window has passed
+    @Query("SELECT b FROM BookingEntity b WHERE b.status = 'PENDING' AND b.createdAt < :expiredBefore")
+    List<BookingEntity> findExpiredPendingBookings(@Param("expiredBefore") LocalDateTime expiredBefore);
 }

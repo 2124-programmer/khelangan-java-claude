@@ -10,5 +10,8 @@ public interface CourtMapper {
 
     @Mapping(target = "venueId", source = "venue.id")
     @Mapping(target = "sportId", source = "sport.id")
+    @Mapping(target = "effectivePricePerHour", expression = "java(entity.effectivePricePerHour())")
+    @Mapping(target = "effectiveOpenTime",     expression = "java(entity.effectiveOpenTime())")
+    @Mapping(target = "effectiveCloseTime",    expression = "java(entity.effectiveCloseTime())")
     CourtDto toDto(CourtEntity entity);
 }

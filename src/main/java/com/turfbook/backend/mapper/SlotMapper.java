@@ -11,9 +11,9 @@ import java.util.List;
 public interface SlotMapper {
 
     @Mapping(target = "courtId", source = "court.id")
-    @Mapping(target = "status", expression = "java(entity.getStatus().name())")
-    @Mapping(target = "startTime", expression = "java(entity.getStartTime().toString())")
-    @Mapping(target = "endTime", expression = "java(entity.getEndTime().toString())")
+    @Mapping(target = "status", source = "status")
+    @Mapping(target = "startTime", source = "startTime")
+    @Mapping(target = "endTime", source = "endTime")
     SlotDto toDto(SlotEntity entity);
 
     List<SlotDto> toDtoList(List<SlotEntity> entities);

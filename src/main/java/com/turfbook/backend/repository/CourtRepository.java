@@ -14,4 +14,8 @@ public interface CourtRepository extends JpaRepository<CourtEntity, Long> {
     List<CourtEntity> findByVenue(VenueEntity venue);
 
     Optional<CourtEntity> findByIdAndVenue(Long id, VenueEntity venue);
+
+    boolean existsByVenueAndName(VenueEntity venue, String name);
+
+    boolean existsByVenueAndNameAndIdNot(VenueEntity venue, String name, Long id);
 }

@@ -30,12 +30,32 @@ public class CourtEntity {
     @JoinColumn(name = "sport_id", nullable = false)
     private SportEntity sport;
 
-    @Column(nullable = false, length = 50)
+    @Column(length = 50)
     private String type;
 
-    @Column(name = "price_per_slot", nullable = false)
+    /**
+     * Court-level price per hour (₹). NULL means inherit from venue.pricePerHour.
+     * The slot engine resolves: court → venue → global default.
+     */
+    @Column(name = "price_per_hour")
+    private Integer pricePerHour;
+
+    /** NULL means inherit venue.openTime ("HH:00" format). */
+    @Column(name = "open_time", length = 5)
+    private String openTime;
+
+    /** NULL means inherit venue.closeTime ("HH:00" format). */
+    @Column(name = "close_time", length = 5)
+    private String closeTime;
+
+    /** Slot length in minutes. Fixed at 60 for now; kept for future 30-min support. */
+    @Column(name = "slot_duration_mins", nullable = false)
     @Builder.Default
-    private int pricePerSlot = 0;
+    private int slotDurationMins = 60;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean isActive = true;
 
     @Column(name = "peak_price", nullable = false)
     @Builder.Default
@@ -44,4 +64,19 @@ public class CourtEntity {
     @OneToMany(mappedBy = "court", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
     private List<SlotEntity> slots = new ArrayList<>();
+
+    /** Resolves the effective price per hour, falling back to venue price. */
+    public int effectivePricePerHour() {
+        return pricePerHour != null ? pricePerHour : venue.getPricePerHour();
+    }
+
+    /** Resolves the effective open time, falling back to venue open time. */
+    public String effectiveOpenTime() {
+        return openTime != null ? openTime : venue.getOpenTime();
+    }
+
+    /** Resolves the effective close time, falling back to venue close time. */
+    public String effectiveCloseTime() {
+        return closeTime != null ? closeTime : venue.getCloseTime();
+    }
 }

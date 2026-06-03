@@ -16,7 +16,7 @@ import java.time.LocalTime;
 public class SlotEntity {
 
     public enum SlotStatus {
-        AVAILABLE, BOOKED, BLOCKED
+        AVAILABLE, BOOKED, BLOCKED, HELD
     }
 
     @Id

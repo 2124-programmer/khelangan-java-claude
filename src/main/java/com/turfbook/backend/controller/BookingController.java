@@ -65,6 +65,22 @@ public class BookingController implements BookingsApi {
         return ResponseEntity.ok(dto);
     }
 
+    @Override
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<BookingDto> acceptBooking(Long id) {
+        UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.acceptBooking() called - id={}, ownerId={}", id, principal.getId());
+        return ResponseEntity.ok(bookingService.acceptBooking(id, principal.getId()));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<BookingDto> rejectBooking(Long id) {
+        UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.rejectBooking() called - id={}, ownerId={}", id, principal.getId());
+        return ResponseEntity.ok(bookingService.rejectBooking(id, principal.getId()));
+    }
+
     private UserPrincipal getCurrentPrincipal() {
         org.springframework.security.core.Authentication auth =
                 org.springframework.security.core.context.SecurityContextHolder
