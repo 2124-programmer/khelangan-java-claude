@@ -35,7 +35,7 @@ public class VenueImageController {
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
-    @Value("${app.base-url:http://192.168.1.5:8080}")
+    @Value("${app.base-url:http://localhost:8080}")
     private String baseUrl;
 
     /**
