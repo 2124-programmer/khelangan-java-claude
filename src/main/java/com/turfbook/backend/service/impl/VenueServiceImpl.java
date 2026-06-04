@@ -22,10 +22,13 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -353,13 +356,78 @@ public class VenueServiceImpl implements VenueService {
     // ─── Slots ─────────────────────────────────────────────────────────────
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<SlotDto> listSlots(Long courtId, LocalDate date) {
         log.info("VenueService.listSlots() called - courtId={}, date={}", courtId, date);
         CourtEntity court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
-        return slotRepository.findByCourtAndDateOrderByStartTime(court, date)
-                .stream().map(slotMapper::toDto).toList();
+
+        int openHour  = Integer.parseInt(court.effectiveOpenTime().split(":")[0]);
+        int closeHour = Integer.parseInt(court.effectiveCloseTime().split(":")[0]);
+
+        // Index existing DB slots by startTime (for BLOCKED status and IDs)
+        Map<LocalTime, SlotEntity> existingByStart = slotRepository
+                .findByCourtAndDateOrderByStartTime(court, date)
+                .stream()
+                .collect(Collectors.toMap(SlotEntity::getStartTime, s -> s));
+
+        // Derive BOOKED/HELD from active bookings (CONFIRMED wins over PENDING for the same slot)
+        Map<LocalTime, BookingEntity.BookingStatus> bookingByStart =
+                bookingRepository.findByCourtAndDateAndStatusIn(
+                        court, date,
+                        List.of(BookingEntity.BookingStatus.CONFIRMED, BookingEntity.BookingStatus.PENDING))
+                .stream()
+                .collect(Collectors.toMap(
+                        BookingEntity::getStartTime,
+                        BookingEntity::getStatus,
+                        (a, b) -> BookingEntity.BookingStatus.CONFIRMED.equals(a) ? a : b
+                ));
+
+        List<SlotDto> result = new ArrayList<>();
+        for (int h = openHour; h < closeHour; h++) {
+            LocalTime start = LocalTime.of(h, 0);
+            LocalTime end   = LocalTime.of(h + 1, 0);
+
+            // Auto-create slot row if it does not exist yet (required by booking flow)
+            SlotEntity slot = existingByStart.get(start);
+            if (slot == null) {
+                slot = slotRepository.save(SlotEntity.builder()
+                        .court(court)
+                        .date(date)
+                        .startTime(start)
+                        .endTime(end)
+                        .status(SlotEntity.SlotStatus.AVAILABLE)
+                        .price(court.effectivePricePerHour())
+                        .build());
+            }
+
+            // BLOCKED is owner-managed on the entity; BOOKED/HELD come from bookings
+            SlotDto.StatusEnum status;
+            if (slot.getStatus() == SlotEntity.SlotStatus.BLOCKED) {
+                status = SlotDto.StatusEnum.BLOCKED;
+            } else {
+                BookingEntity.BookingStatus bs = bookingByStart.get(start);
+                if (BookingEntity.BookingStatus.CONFIRMED.equals(bs)) {
+                    status = SlotDto.StatusEnum.BOOKED;
+                } else if (BookingEntity.BookingStatus.PENDING.equals(bs)) {
+                    status = SlotDto.StatusEnum.HELD;
+                } else {
+                    status = SlotDto.StatusEnum.AVAILABLE;
+                }
+            }
+
+            SlotDto dto = new SlotDto();
+            dto.setId(slot.getId());
+            dto.setCourtId(courtId);
+            dto.setDate(date);
+            dto.setStartTime(start.toString());
+            dto.setEndTime(end.toString());
+            dto.setStatus(status);
+            dto.setPrice(slot.getPrice());
+            result.add(dto);
+        }
+
+        return result;
     }
 
     @Override

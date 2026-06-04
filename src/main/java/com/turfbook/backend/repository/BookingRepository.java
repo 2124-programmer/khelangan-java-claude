@@ -1,6 +1,7 @@
 package com.turfbook.backend.repository;
 
 import com.turfbook.backend.entity.BookingEntity;
+import com.turfbook.backend.entity.CourtEntity;
 import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.entity.VenueEntity;
 import org.springframework.data.domain.Page;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -74,6 +76,13 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             VenueEntity venue,
             LocalDate date,
             BookingEntity.BookingStatus status
+    );
+
+    // For slot status resolution in listSlots
+    List<BookingEntity> findByCourtAndDateAndStatusIn(
+            CourtEntity court,
+            LocalDate date,
+            Collection<BookingEntity.BookingStatus> statuses
     );
 
     // PENDING bookings whose 24-hour acceptance window has passed
