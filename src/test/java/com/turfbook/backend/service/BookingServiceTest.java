@@ -6,6 +6,7 @@ import com.turfbook.backend.entity.*;
 import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.mapper.BookingMapper;
 import com.turfbook.backend.repository.*;
+import com.turfbook.backend.service.OwnerSettingsService;
 import com.turfbook.backend.service.impl.BookingServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,7 @@ class BookingServiceTest {
     @Mock private PlatformSettingsRepository settingsRepository;
     @Mock private NotificationService notificationService;
     @Mock private BookingMapper bookingMapper;
+    @Mock private OwnerSettingsService ownerSettingsService;
 
     @InjectMocks
     private BookingServiceImpl bookingService;
@@ -73,7 +75,7 @@ class BookingServiceTest {
                 .name("Test Turf")
                 .address("123 Main St")
                 .city("Mumbai")
-                .pricePerSlot(500)
+                .pricePerHour(500)
                 .status(VenueEntity.VenueStatus.LIVE)
                 .build();
 
@@ -82,7 +84,7 @@ class BookingServiceTest {
                 .venue(venue)
                 .name("Court A")
                 .type("OUTDOOR")
-                .pricePerSlot(500)
+                .pricePerHour(500)
                 .peakPrice(700)
                 .build();
 
@@ -140,6 +142,7 @@ class BookingServiceTest {
         when(venueRepository.findById(10L)).thenReturn(Optional.of(venue));
         when(courtRepository.findById(20L)).thenReturn(Optional.of(court));
         when(settingsRepository.findById(1L)).thenReturn(Optional.of(settings));
+        when(ownerSettingsService.isAutoAccept(anyLong())).thenReturn(true);
         when(slotRepository.save(any(SlotEntity.class))).thenReturn(slot);
         when(bookingRepository.save(any(BookingEntity.class))).thenReturn(savedBooking);
         when(userRepository.save(any(UserEntity.class))).thenReturn(player);
@@ -313,6 +316,7 @@ class BookingServiceTest {
         when(venueRepository.findById(10L)).thenReturn(Optional.of(venue));
         when(courtRepository.findById(20L)).thenReturn(Optional.of(court));
         when(settingsRepository.findById(1L)).thenReturn(Optional.of(settings));
+        when(ownerSettingsService.isAutoAccept(anyLong())).thenReturn(true);
         when(slotRepository.save(any())).thenReturn(slot);
         when(bookingRepository.save(any(BookingEntity.class))).thenAnswer(inv -> {
             savedRef[0] = inv.getArgument(0);

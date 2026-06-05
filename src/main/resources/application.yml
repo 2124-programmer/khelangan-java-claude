@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/turfbook?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/score-adda?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
     username: ${DB_USER:root}
     password: ${DB_PASS:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -13,7 +13,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
     open-in-view: false
     properties:
@@ -27,7 +27,7 @@ spring:
         order_updates: true
 
   flyway:
-    enabled: true
+    enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: false
     validate-on-migrate: true
@@ -39,10 +39,18 @@ spring:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 20MB
+
 app:
   jwt:
     secret: ${JWT_SECRET:turfbook-super-secret-key-change-in-production-must-be-256-bits-long-enough}
     expiration-ms: 86400000  # 24 hours
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  base-url: ${BASE_URL:http://localhost:8080}
 
 server:
   port: 8080

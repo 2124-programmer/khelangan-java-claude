@@ -13,12 +13,16 @@ public interface VenueMapper {
 
     @Mapping(target = "ownerId", source = "owner.id")
     @Mapping(target = "status", expression = "java(entity.getStatus().name())")
+    @Mapping(target = "sports", source = "sports")
+    @Mapping(target = "amenities", source = "amenities")
+    @Mapping(target = "isActive", expression = "java(entity.isActive())")
     VenueSummaryDto toSummaryDto(VenueEntity entity);
 
     @Mapping(target = "ownerId", source = "owner.id")
     @Mapping(target = "status", expression = "java(entity.getStatus().name())")
     @Mapping(target = "sports", source = "sports")
     @Mapping(target = "courts", source = "courts")
+    @Mapping(target = "isActive", expression = "java(entity.isActive())")
     @Mapping(target = "createdAt", expression = "java(entity.getCreatedAt() != null ? entity.getCreatedAt().atOffset(java.time.ZoneOffset.UTC) : null)")
     VenueDetailDto toDetailDto(VenueEntity entity);
 
