@@ -62,6 +62,12 @@ public class UserEntity {
     @Builder.Default
     private boolean isBlocked = false;
 
+    @Column(name = "provider", length = 20)
+    private String provider;
+
+    @Column(name = "provider_id", length = 255)
+    private String providerId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

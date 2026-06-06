@@ -1,5 +1,9 @@
 package com.turfbook.backend.service.impl;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.OtpRecordEntity;
 import com.turfbook.backend.entity.UserEntity;
@@ -13,6 +17,7 @@ import com.turfbook.backend.service.AuthService;
 import com.turfbook.backend.util.LogMaskUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -26,9 +31,11 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +48,9 @@ public class AuthServiceImpl implements AuthService {
     private final JwtTokenProvider tokenProvider;
     private final AuthenticationManager authenticationManager;
     private final UserMapper userMapper;
+
+    @Value("${google.web-client-id}")
+    private String googleWebClientId;
 
     private static final int OTP_EXPIRY_SEC     = 300; // 5 min
     private static final int OTP_RESEND_SEC     = 60;
@@ -209,6 +219,91 @@ public class AuthServiceImpl implements AuthService {
         response.setUser(userMapper.toDto(user));
         log.info("AuthService.verifyOtp() completed - userId={}, role={}", user.getId(), user.getRole());
         return response;
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse googleSignIn(GoogleSignInRequest request) {
+        log.info("AuthService.googleSignIn() called");
+        GoogleIdToken.Payload payload = verifyGoogleToken(request.getIdToken());
+
+        String email = payload.getEmail().toLowerCase().trim();
+        String googleSub = payload.getSubject();
+        String name = (String) payload.get("name");
+        String pictureUrl = (String) payload.get("picture");
+        if (name == null || name.isBlank()) {
+            name = email.split("@")[0];
+        }
+
+        Optional<UserEntity> existing = userRepository.findByEmail(email);
+        UserEntity user;
+
+        if (existing.isPresent()) {
+            user = existing.get();
+            // Link Google provider to existing account on first Google login
+            if (user.getProvider() == null) {
+                user.setProvider("GOOGLE");
+                user.setProviderId(googleSub);
+                user = userRepository.save(user);
+            }
+        } else {
+            // New user — apply requested role, clamping ADMIN → PLAYER
+            UserEntity.Role role = UserEntity.Role.PLAYER;
+            if (request.getRole() != null) {
+                try {
+                    UserEntity.Role requested = UserEntity.Role.valueOf(request.getRole().name());
+                    if (requested != UserEntity.Role.ADMIN) {
+                        role = requested;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            user = UserEntity.builder()
+                    .name(name)
+                    .email(email)
+                    .phone("")
+                    .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                    .role(role)
+                    .avatarUrl(pictureUrl)
+                    .provider("GOOGLE")
+                    .providerId(googleSub)
+                    .build();
+            user = userRepository.save(user);
+        }
+
+        if (user.isBlocked()) {
+            throw new UnauthorizedException("Your account has been blocked. Please contact support.");
+        }
+
+        String token = tokenProvider.generateToken(user.getId(), user.getRole().name());
+        AuthResponse response = new AuthResponse();
+        response.setToken(token);
+        response.setRefreshToken(token);
+        response.setUser(userMapper.toDto(user));
+        log.info("AuthService.googleSignIn() completed - userId={}, role={}", user.getId(), user.getRole());
+        return response;
+    }
+
+    private GoogleIdToken.Payload verifyGoogleToken(String idTokenString) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+                    new NetHttpTransport(),
+                    GsonFactory.getDefaultInstance()
+            )
+                    .setAudience(Collections.singletonList(googleWebClientId))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(idTokenString);
+            if (idToken == null) {
+                throw new UnauthorizedException("Invalid Google ID token");
+            }
+            return idToken.getPayload();
+        } catch (UnauthorizedException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Google token verification failed", e);
+            throw new UnauthorizedException("Google authentication failed");
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

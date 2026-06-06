@@ -104,6 +104,18 @@ components:
         refreshToken:
           type: string
 
+    GoogleSignInRequest:
+      type: object
+      required: [idToken]
+      properties:
+        idToken:
+          type: string
+          description: Google ID token obtained from GoogleSignin.signIn() on the client
+        role:
+          type: string
+          enum: [PLAYER, OWNER]
+          description: Requested role for new accounts only. Ignored when the email already exists. ADMIN is never assignable here.
+
     AuthResponse:
       type: object
       properties:
@@ -1356,6 +1368,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+
+  /api/v1/auth/google:
+    post:
+      tags: [Auth]
+      summary: Sign in or register with Google
+      operationId: googleSignIn
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleSignInRequest'
+      responses:
+        '200':
+          description: Google sign-in successful — JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid or expired Google ID token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   # ─── Users ────────────────────────────────────────────────────────────────
   /api/v1/users/me:

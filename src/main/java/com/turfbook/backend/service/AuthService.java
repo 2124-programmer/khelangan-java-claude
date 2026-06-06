@@ -15,4 +15,6 @@ public interface AuthService {
     MessageResponse forgotPassword(ForgotPasswordRequest request);
 
     AuthResponse refreshToken(RefreshTokenRequest request);
+
+    AuthResponse googleSignIn(GoogleSignInRequest request);
 }

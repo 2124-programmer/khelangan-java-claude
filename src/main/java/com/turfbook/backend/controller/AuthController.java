@@ -51,4 +51,10 @@ public class AuthController implements AuthApi {
         log.info("AuthController.refreshToken() called");
         return ResponseEntity.ok(authService.refreshToken(request));
     }
+
+    @Override
+    public ResponseEntity<AuthResponse> googleSignIn(GoogleSignInRequest request) {
+        log.info("AuthController.googleSignIn() called");
+        return ResponseEntity.ok(authService.googleSignIn(request));
+    }
 }
