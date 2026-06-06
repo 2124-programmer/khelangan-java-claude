@@ -35,12 +35,20 @@ public class BookingExpiryTask {
 
         log.info("Expiring {} PENDING booking(s) older than 24h", expired.size());
         for (BookingEntity booking : expired) {
-            booking.setStatus(BookingEntity.BookingStatus.EXPIRED);
-            SlotEntity slot = booking.getSlot();
-            slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
-            slotRepository.save(slot);
-            bookingRepository.save(booking);
-            log.info("Booking {} expired — slot {} released", booking.getId(), slot.getId());
+            try {
+                booking.setStatus(BookingEntity.BookingStatus.EXPIRED);
+                SlotEntity slot = booking.getSlot();
+                if (slot != null) {
+                    slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+                    slotRepository.save(slot);
+                    log.info("Booking {} expired — slot {} released", booking.getId(), slot.getId());
+                } else {
+                    log.warn("Booking {} expired — slot reference is missing (orphaned FK), booking expired without slot release", booking.getId());
+                }
+                bookingRepository.save(booking);
+            } catch (Exception e) {
+                log.error("Failed to expire booking {} — skipping this record", booking.getId(), e);
+            }
         }
     }
 }

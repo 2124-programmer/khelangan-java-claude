@@ -41,7 +41,7 @@ public class BookingEntity {
     @JoinColumn(name = "court_id", nullable = false)
     private CourtEntity court;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
     @JoinColumn(name = "slot_id", nullable = false)
     private SlotEntity slot;
 
