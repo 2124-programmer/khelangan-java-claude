@@ -388,6 +388,7 @@ public class VenueServiceImpl implements VenueService {
             LocalTime start = LocalTime.of(h, 0);
             LocalTime end   = LocalTime.of(h + 1, 0);
 
+            //ToDo - need to remove auto save slots
             // Auto-create slot row if it does not exist yet (required by booking flow)
             SlotEntity slot = existingByStart.get(start);
             if (slot == null) {
@@ -428,32 +429,6 @@ public class VenueServiceImpl implements VenueService {
         }
 
         return result;
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<CourtSlotsDto> listSlotsByVenue(Long venueId, LocalDate date, Long sportId) {
-        log.info("VenueService.listSlotsByVenue() called - venueId={}, date={}, sportId={}", venueId, date, sportId);
-        VenueEntity venue = venueRepository.findById(venueId)
-                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
-
-        List<CourtEntity> courts = courtRepository.findByVenue(venue);
-        if (sportId != null) {
-            courts = courts.stream()
-                    .filter(c -> c.getSport().getId().equals(sportId))
-                    .toList();
-        }
-
-        return courts.stream().map(court -> {
-            List<SlotDto> slots = slotRepository
-                    .findByCourtAndDateOrderByStartTime(court, date)
-                    .stream().map(slotMapper::toDto).toList();
-            CourtSlotsDto dto = new CourtSlotsDto();
-            dto.setCourtId(court.getId());
-            dto.setCourtName(court.getName());
-            dto.setSlots(slots);
-            return dto;
-        }).toList();
     }
 
     @Override
