@@ -113,12 +113,22 @@ public class NotificationServiceImpl implements NotificationService {
     @Transactional
     public void createNotification(UserEntity user, String title, String body,
                                     NotificationEntity.NotificationType type) {
+        createNotification(user, title, body, type, null, null);
+    }
+
+    @Override
+    @Transactional
+    public void createNotification(UserEntity user, String title, String body,
+                                    NotificationEntity.NotificationType type,
+                                    String referenceId, String referenceType) {
         NotificationEntity notification = NotificationEntity.builder()
                 .user(user)
                 .title(title)
                 .body(body)
                 .type(type)
                 .isRead(false)
+                .referenceId(referenceId)
+                .referenceType(referenceType)
                 .build();
         notificationRepository.save(notification);
         log.info("NotificationService.createNotification() completed - userId={}, title={}", user.getId(), title);

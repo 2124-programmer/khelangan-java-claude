@@ -21,4 +21,7 @@ public interface NotificationService {
 
     // Internal helpers for other services
     void createNotification(UserEntity user, String title, String body, NotificationEntity.NotificationType type);
+
+    void createNotification(UserEntity user, String title, String body,
+                            NotificationEntity.NotificationType type, String referenceId, String referenceType);
 }

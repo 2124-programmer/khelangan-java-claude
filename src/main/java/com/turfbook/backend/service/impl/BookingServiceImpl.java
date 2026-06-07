@@ -212,6 +212,7 @@ public class BookingServiceImpl implements BookingService {
         }
 
         // 10. Notifications
+        String bookingRef = String.valueOf(booking.getId());
         if (autoAccept) {
             notificationService.createNotification(
                     player,
@@ -225,7 +226,7 @@ public class BookingServiceImpl implements BookingService {
                     "New Booking Received",
                     String.format("New booking by %s at %s on %s. Amount: ₹%d",
                             player.getName(), venue.getName(), slot.getDate(), effectiveAmount),
-                    NotificationEntity.NotificationType.BOOKING
+                    NotificationEntity.NotificationType.BOOKING, bookingRef, "BOOKING"
             );
         } else {
             notificationService.createNotification(
@@ -240,7 +241,7 @@ public class BookingServiceImpl implements BookingService {
                     "New Booking Request",
                     String.format("%s has requested to book %s at %s on %s. Please accept or reject.",
                             player.getName(), court.getName(), venue.getName(), slot.getDate()),
-                    NotificationEntity.NotificationType.BOOKING
+                    NotificationEntity.NotificationType.BOOKING, bookingRef, "BOOKING"
             );
         }
 
@@ -515,7 +516,7 @@ public class BookingServiceImpl implements BookingService {
             notificationService.createNotification(owner, "New Bookings Received",
                     String.format("%s booked %d slots at %s on %s (%s). Total: ₹%d",
                             player.getName(), results.size(), venue.getName(), date, slotSummary, totalAmount),
-                    NotificationEntity.NotificationType.BOOKING);
+                    NotificationEntity.NotificationType.BOOKING, groupId, "BOOKING_GROUP");
         } else {
             notificationService.createNotification(player, "Booking Requests Sent",
                     String.format("%d slot requests sent to %s on %s (%s). Awaiting confirmation.",
@@ -524,7 +525,7 @@ public class BookingServiceImpl implements BookingService {
             notificationService.createNotification(owner, "New Booking Request",
                     String.format("%s requested %d slots at %s on %s (%s). Please accept or reject.",
                             player.getName(), results.size(), venue.getName(), date, slotSummary),
-                    NotificationEntity.NotificationType.BOOKING);
+                    NotificationEntity.NotificationType.BOOKING, groupId, "BOOKING_GROUP");
         }
 
         log.info("Bulk booking created: {} bookings, player={}, venue={}", results.size(), playerId, venue.getId());

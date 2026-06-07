@@ -1088,6 +1088,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        referenceId:
+          type: string
+        referenceType:
+          type: string
 
     BroadcastRequest:
       type: object

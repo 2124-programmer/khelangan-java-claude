@@ -42,6 +42,12 @@ public class NotificationEntity {
     @Builder.Default
     private boolean isRead = false;
 
+    @Column(name = "reference_id", length = 64)
+    private String referenceId;
+
+    @Column(name = "reference_type", length = 32)
+    private String referenceType;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
