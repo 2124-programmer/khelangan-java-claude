@@ -85,6 +85,9 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             Collection<BookingEntity.BookingStatus> statuses
     );
 
+    // Group booking lookup
+    List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
+
     // PENDING bookings whose 24-hour acceptance window has passed.
     // LEFT JOIN FETCH avoids lazy proxy initialization for slots that may have been deleted.
     @Query("SELECT b FROM BookingEntity b LEFT JOIN FETCH b.slot WHERE b.status = 'PENDING' AND b.createdAt < :expiredBefore")

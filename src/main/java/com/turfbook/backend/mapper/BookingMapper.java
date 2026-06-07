@@ -21,5 +21,6 @@ public interface BookingMapper {
     @Mapping(target = "endTime", expression = "java(entity.getEndTime().toString())")
     @Mapping(target = "hasReview", expression = "java(entity.isHasReview())")
     @Mapping(target = "createdAt", expression = "java(entity.getCreatedAt() != null ? entity.getCreatedAt().atOffset(java.time.ZoneOffset.UTC) : null)")
+    @Mapping(target = "groupId", source = "entity.groupId")
     BookingDto toDto(BookingEntity entity);
 }

@@ -90,6 +90,9 @@ public class BookingEntity {
     @Builder.Default
     private boolean hasReview = false;
 
+    @Column(name = "group_id", length = 36)
+    private String groupId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

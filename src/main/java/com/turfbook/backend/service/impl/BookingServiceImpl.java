@@ -28,6 +28,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -443,6 +444,7 @@ public class BookingServiceImpl implements BookingService {
         SlotEntity.SlotStatus targetStatus = autoAccept
                 ? SlotEntity.SlotStatus.BOOKED : SlotEntity.SlotStatus.HELD;
         LocalDate date = LocalDate.parse(request.getDate());
+        String groupId = UUID.randomUUID().toString();
 
         List<BookingDto> results = new ArrayList<>();
 
@@ -491,31 +493,130 @@ public class BookingServiceImpl implements BookingService {
                     .status(autoAccept ? BookingEntity.BookingStatus.CONFIRMED : BookingEntity.BookingStatus.PENDING)
                     .paymentStatus(autoAccept ? BookingEntity.PaymentStatus.SUCCESS : BookingEntity.PaymentStatus.PENDING)
                     .hasReview(false)
+                    .groupId(groupId)
                     .build();
 
             results.add(bookingMapper.toDto(bookingRepository.save(booking)));
         }
+
+        String slotSummary = request.getStartTimes().stream()
+                .map(t -> t + "–" + LocalTime.parse(t).plusHours(1).toString().substring(0, 5))
+                .reduce((a, b) -> a + ", " + b).orElse("");
+        int totalAmount = results.stream().mapToInt(BookingDto::getAmount).sum();
 
         if (autoAccept) {
             player.setTotalBookings(player.getTotalBookings() + results.size());
             userRepository.save(player);
 
             notificationService.createNotification(player, "Bookings Confirmed",
-                    String.format("%d slots confirmed at %s on %s", results.size(), venue.getName(), date),
+                    String.format("%d slots confirmed at %s on %s (%s). Total: ₹%d",
+                            results.size(), venue.getName(), date, slotSummary, totalAmount),
                     NotificationEntity.NotificationType.BOOKING);
             notificationService.createNotification(owner, "New Bookings Received",
-                    String.format("%d new bookings by %s at %s on %s", results.size(), player.getName(), venue.getName(), date),
+                    String.format("%s booked %d slots at %s on %s (%s). Total: ₹%d",
+                            player.getName(), results.size(), venue.getName(), date, slotSummary, totalAmount),
                     NotificationEntity.NotificationType.BOOKING);
         } else {
             notificationService.createNotification(player, "Booking Requests Sent",
-                    String.format("%d slot requests sent to %s on %s. Awaiting confirmation.", results.size(), venue.getName(), date),
+                    String.format("%d slot requests sent to %s on %s (%s). Awaiting confirmation.",
+                            results.size(), venue.getName(), date, slotSummary),
                     NotificationEntity.NotificationType.BOOKING);
-            notificationService.createNotification(owner, "New Booking Requests",
-                    String.format("%d booking requests from %s for %s on %s", results.size(), player.getName(), venue.getName(), date),
+            notificationService.createNotification(owner, "New Booking Request",
+                    String.format("%s requested %d slots at %s on %s (%s). Please accept or reject.",
+                            player.getName(), results.size(), venue.getName(), date, slotSummary),
                     NotificationEntity.NotificationType.BOOKING);
         }
 
         log.info("Bulk booking created: {} bookings, player={}, venue={}", results.size(), playerId, venue.getId());
+        return results;
+    }
+
+    // ─── acceptBookingGroup ────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public List<BookingDto> acceptBookingGroup(String groupId, Long ownerId) {
+        log.info("BookingService.acceptBookingGroup() called - groupId={}, ownerId={}", groupId, ownerId);
+        List<BookingEntity> bookings = bookingRepository.findByGroupIdOrderByStartTimeAsc(groupId);
+        if (bookings.isEmpty()) {
+            throw new ResourceNotFoundException("BookingGroup", "groupId", groupId);
+        }
+
+        VenueEntity venue = bookings.get(0).getVenue();
+        if (!venue.getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+
+        List<BookingDto> results = new ArrayList<>();
+        UserEntity player = bookings.get(0).getPlayer();
+
+        for (BookingEntity booking : bookings) {
+            if (booking.getStatus() != BookingEntity.BookingStatus.PENDING) continue;
+            booking.setStatus(BookingEntity.BookingStatus.CONFIRMED);
+            booking.setPaymentStatus(BookingEntity.PaymentStatus.SUCCESS);
+            SlotEntity slot = booking.getSlot();
+            if (slot != null) {
+                slot.setStatus(SlotEntity.SlotStatus.BOOKED);
+                slotRepository.save(slot);
+            }
+            player.setTotalBookings(player.getTotalBookings() + 1);
+            results.add(bookingMapper.toDto(bookingRepository.save(booking)));
+        }
+        userRepository.save(player);
+
+        int totalAmount = results.stream().mapToInt(BookingDto::getAmount).sum();
+        notificationService.createNotification(
+                player,
+                "Booking Confirmed",
+                String.format("%d slots confirmed at %s on %s. Total: ₹%d",
+                        results.size(), venue.getName(), bookings.get(0).getDate(), totalAmount),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        log.info("BookingGroup {} accepted by owner {}: {} bookings confirmed", groupId, ownerId, results.size());
+        return results;
+    }
+
+    // ─── rejectBookingGroup ────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public List<BookingDto> rejectBookingGroup(String groupId, Long ownerId) {
+        log.info("BookingService.rejectBookingGroup() called - groupId={}, ownerId={}", groupId, ownerId);
+        List<BookingEntity> bookings = bookingRepository.findByGroupIdOrderByStartTimeAsc(groupId);
+        if (bookings.isEmpty()) {
+            throw new ResourceNotFoundException("BookingGroup", "groupId", groupId);
+        }
+
+        VenueEntity venue = bookings.get(0).getVenue();
+        if (!venue.getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+
+        List<BookingDto> results = new ArrayList<>();
+        UserEntity player = bookings.get(0).getPlayer();
+
+        for (BookingEntity booking : bookings) {
+            if (booking.getStatus() != BookingEntity.BookingStatus.PENDING) continue;
+            booking.setStatus(BookingEntity.BookingStatus.REJECTED);
+            booking.setPaymentStatus(BookingEntity.PaymentStatus.FAILED);
+            SlotEntity slot = booking.getSlot();
+            if (slot != null) {
+                slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+                slotRepository.save(slot);
+            }
+            results.add(bookingMapper.toDto(bookingRepository.save(booking)));
+        }
+
+        notificationService.createNotification(
+                player,
+                "Booking Request Rejected",
+                String.format("Your %d-slot booking request at %s on %s was not accepted by the owner.",
+                        results.size(), venue.getName(), bookings.get(0).getDate()),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        log.info("BookingGroup {} rejected by owner {}: {} bookings rejected", groupId, ownerId, results.size());
         return results;
     }
 

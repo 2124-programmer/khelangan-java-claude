@@ -727,6 +727,9 @@ components:
         createdAt:
           type: string
           format: date-time
+        groupId:
+          type: string
+          nullable: true
 
     CreateBookingRequest:
       type: object

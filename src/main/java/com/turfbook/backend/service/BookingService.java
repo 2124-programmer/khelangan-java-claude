@@ -24,4 +24,8 @@ public interface BookingService {
     BookingDto acceptBooking(Long bookingId, Long ownerId);
 
     BookingDto rejectBooking(Long bookingId, Long ownerId);
+
+    List<BookingDto> acceptBookingGroup(String groupId, Long ownerId);
+
+    List<BookingDto> rejectBookingGroup(String groupId, Long ownerId);
 }

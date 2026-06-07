@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -94,6 +95,20 @@ public class BookingController implements BookingsApi {
                 request.getStartTimes() == null ? 0 : request.getStartTimes().size());
         List<BookingDto> dtos = bookingService.bulkCreateBookings(principal.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(dtos);
+    }
+
+    @PostMapping("/api/v1/bookings/group/{groupId}/accept")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<List<BookingDto>> acceptBookingGroup(@PathVariable String groupId) {
+        UserPrincipal principal = getCurrentPrincipal();
+        return ResponseEntity.ok(bookingService.acceptBookingGroup(groupId, principal.getId()));
+    }
+
+    @PostMapping("/api/v1/bookings/group/{groupId}/reject")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<List<BookingDto>> rejectBookingGroup(@PathVariable String groupId) {
+        UserPrincipal principal = getCurrentPrincipal();
+        return ResponseEntity.ok(bookingService.rejectBookingGroup(groupId, principal.getId()));
     }
 
     private UserPrincipal getCurrentPrincipal() {
