@@ -118,6 +118,13 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     @Transactional
+    public void dismissNotificationsForBooking(UserEntity user, String referenceId) {
+        int count = notificationRepository.markReadByUserAndReferenceId(user, referenceId);
+        log.info("Dismissed {} notification(s) for userId={}, referenceId={}", count, user.getId(), referenceId);
+    }
+
+    @Override
+    @Transactional
     public void createNotification(UserEntity user, String title, String body,
                                     NotificationEntity.NotificationType type,
                                     String referenceId, String referenceType) {

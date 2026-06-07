@@ -318,15 +318,118 @@ public class BookingServiceImpl implements BookingService {
         notificationService.createNotification(
                 booking.getPlayer(),
                 "Booking Cancelled",
-                String.format("Your booking at %s on %s has been cancelled.%s",
+                String.format("Your booking at %s on %s (%s – %s) has been cancelled.%s",
                         booking.getVenue().getName(),
                         booking.getDate(),
+                        slot.getStartTime(),
+                        slot.getEndTime(),
                         booking.getPaymentStatus() == BookingEntity.PaymentStatus.REFUNDED
                                 ? " A refund has been initiated." : ""),
                 NotificationEntity.NotificationType.BOOKING
         );
 
+        // Dismiss the owner's actionable "New Booking Request" notification so that
+        // Accept/Reject buttons no longer appear for a booking that is already cancelled.
+        notificationService.dismissNotificationsForBooking(
+                booking.getVenue().getOwner(),
+                String.valueOf(booking.getId())
+        );
+
+        notificationService.createNotification(
+                booking.getVenue().getOwner(),
+                "Booking Cancelled by Player",
+                String.format("%s has cancelled their booking at %s on %s (%s – %s).",
+                        booking.getPlayer().getName(),
+                        booking.getVenue().getName(),
+                        booking.getDate(),
+                        slot.getStartTime(),
+                        slot.getEndTime()),
+                NotificationEntity.NotificationType.BOOKING,
+                String.valueOf(booking.getId()),
+                "BOOKING"
+        );
+
         return bookingMapper.toDto(booking);
+    }
+
+    // ─── cancelBookingGroup ────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public List<BookingDto> cancelBookingGroup(String groupId, Long playerId) {
+        log.info("BookingService.cancelBookingGroup() called - groupId={}, playerId={}", groupId, playerId);
+        List<BookingEntity> bookings = bookingRepository.findByGroupIdOrderByStartTimeAsc(groupId);
+        if (bookings.isEmpty()) {
+            throw new ResourceNotFoundException("BookingGroup", "groupId", groupId);
+        }
+
+        UserEntity player = bookings.get(0).getPlayer();
+        if (!player.getId().equals(playerId)) {
+            throw new UnauthorizedException("You can only cancel your own bookings");
+        }
+
+        VenueEntity venue = bookings.get(0).getVenue();
+        LocalDate date = bookings.get(0).getDate();
+        List<BookingDto> results = new ArrayList<>();
+
+        for (BookingEntity booking : bookings) {
+            if (booking.getStatus() != BookingEntity.BookingStatus.CONFIRMED
+                    && booking.getStatus() != BookingEntity.BookingStatus.PENDING) continue;
+
+            if (booking.getStatus() == BookingEntity.BookingStatus.PENDING) {
+                booking.setPaymentStatus(BookingEntity.PaymentStatus.PENDING);
+            } else {
+                LocalDateTime slotDateTime = LocalDateTime.of(booking.getDate(), booking.getStartTime());
+                long hoursUntilSlot = ChronoUnit.HOURS.between(LocalDateTime.now(), slotDateTime);
+                booking.setPaymentStatus(hoursUntilSlot >= 12
+                        ? BookingEntity.PaymentStatus.REFUNDED
+                        : BookingEntity.PaymentStatus.PENDING);
+            }
+
+            booking.setStatus(BookingEntity.BookingStatus.CANCELLED);
+            SlotEntity slot = booking.getSlot();
+            if (slot != null) {
+                slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+                slotRepository.save(slot);
+            }
+            results.add(bookingMapper.toDto(bookingRepository.save(booking)));
+        }
+
+        if (results.isEmpty()) {
+            throw new ConflictException("No cancellable bookings found in group");
+        }
+
+        String slotSummary = results.stream()
+                .map(r -> r.getStartTime() + "–" + r.getEndTime())
+                .reduce((a, b) -> a + ", " + b).orElse("");
+
+        boolean anyRefund = results.stream()
+                .anyMatch(r -> "REFUNDED".equals(r.getPaymentStatus()));
+
+        notificationService.createNotification(
+                player,
+                "Bookings Cancelled",
+                String.format("Your %d-slot booking at %s on %s (%s) has been cancelled.%s",
+                        results.size(), venue.getName(), date, slotSummary,
+                        anyRefund ? " A refund has been initiated." : ""),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        // Dismiss the owner's group "New Booking Request" notification
+        notificationService.dismissNotificationsForBooking(venue.getOwner(), groupId);
+
+        notificationService.createNotification(
+                venue.getOwner(),
+                "Booking Cancelled by Player",
+                String.format("%s has cancelled their %d-slot booking at %s on %s (%s).",
+                        player.getName(), results.size(), venue.getName(), date, slotSummary),
+                NotificationEntity.NotificationType.BOOKING,
+                groupId,
+                "BOOKING_GROUP"
+        );
+
+        log.info("BookingGroup {} cancelled by player {}: {} bookings cancelled", groupId, playerId, results.size());
+        return results;
     }
 
     // ─── acceptBooking ─────────────────────────────────────────────────────

@@ -24,4 +24,8 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
     List<NotificationEntity> findByUserAndIsReadFalse(UserEntity user);
 
     long countByUserAndIsReadFalse(UserEntity user);
+
+    @Modifying
+    @Query("UPDATE NotificationEntity n SET n.isRead = true WHERE n.user = :user AND n.referenceId = :referenceId AND n.isRead = false")
+    int markReadByUserAndReferenceId(@Param("user") UserEntity user, @Param("referenceId") String referenceId);
 }

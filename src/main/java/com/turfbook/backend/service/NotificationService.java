@@ -24,4 +24,7 @@ public interface NotificationService {
 
     void createNotification(UserEntity user, String title, String body,
                             NotificationEntity.NotificationType type, String referenceId, String referenceType);
+
+    /** Marks all unread notifications for a given user + referenceId as read. */
+    void dismissNotificationsForBooking(UserEntity user, String referenceId);
 }
