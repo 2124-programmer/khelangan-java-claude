@@ -55,11 +55,14 @@ public class VenueServiceImpl implements VenueService {
         log.info("VenueService.listVenues() called - city={}, sport={}, search={}", city, sport, search);
         Pageable pageable = PageRequest.of(page, size);
         String cityParam = StringUtils.hasText(city) ? city : null;
-        String sportParam = StringUtils.hasText(sport) ? sport : null;
+        Long sportId = null;
+        if (StringUtils.hasText(sport)) {
+            try { sportId = Long.parseLong(sport); } catch (NumberFormatException ignored) {}
+        }
         String searchParam = StringUtils.hasText(search) ? search : null;
 
         Page<VenueEntity> entityPage = venueRepository.findLiveVenues(
-                VenueEntity.VenueStatus.LIVE, cityParam, sportParam, searchParam, pageable);
+                VenueEntity.VenueStatus.LIVE, cityParam, sportId, searchParam, pageable);
         return toVenueSummaryPage(entityPage);
     }
 

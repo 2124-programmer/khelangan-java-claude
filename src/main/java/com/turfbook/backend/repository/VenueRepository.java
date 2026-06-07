@@ -21,13 +21,13 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
     @Query("SELECT DISTINCT v FROM VenueEntity v LEFT JOIN v.sports s WHERE " +
            "v.status = :liveStatus AND " +
            "(:city IS NULL OR LOWER(v.city) = LOWER(:city)) AND " +
-           "(:sport IS NULL OR LOWER(s.name) = LOWER(:sport)) AND " +
+           "(:sportId IS NULL OR s.id = :sportId) AND " +
            "(:search IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
            "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :search, '%')))")
     Page<VenueEntity> findLiveVenues(
             @Param("liveStatus") VenueEntity.VenueStatus liveStatus,
             @Param("city") String city,
-            @Param("sport") String sport,
+            @Param("sportId") Long sportId,
             @Param("search") String search,
             Pageable pageable
     );
