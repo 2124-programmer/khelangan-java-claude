@@ -77,6 +77,14 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public long getUnreadCount(Long userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+        return notificationRepository.countByUserAndIsReadFalse(user);
+    }
+
+    @Override
     @Transactional
     public MessageResponse broadcast(BroadcastRequest request) {
         log.info("NotificationService.broadcast() called - audience={}", request.getAudience());

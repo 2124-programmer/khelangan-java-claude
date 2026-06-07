@@ -4,6 +4,7 @@ import com.turfbook.backend.api.NotificationsApi;
 import com.turfbook.backend.dto.MessageResponse;
 import com.turfbook.backend.dto.NotificationDto;
 import com.turfbook.backend.dto.NotificationPage;
+import com.turfbook.backend.dto.UnreadCountResponse;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,16 @@ public class NotificationController implements NotificationsApi {
         UserPrincipal principal = getPrincipal();
         log.info("NotificationController.markAllNotificationsRead() called - userId={}", principal.getId());
         return ResponseEntity.ok(notificationService.markAllRead(principal.getId()));
+    }
+
+    @Override
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UnreadCountResponse> getUnreadNotificationCount() {
+        UserPrincipal principal = getPrincipal();
+        log.info("NotificationController.getUnreadNotificationCount() called - userId={}", principal.getId());
+        UnreadCountResponse response = new UnreadCountResponse();
+        response.setCount(notificationService.getUnreadCount(principal.getId()));
+        return ResponseEntity.ok(response);
     }
 
     private UserPrincipal getPrincipal() {

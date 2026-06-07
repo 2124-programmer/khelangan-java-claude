@@ -120,6 +120,13 @@ components:
         message:
           type: string
 
+    UnreadCountResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int64
+
     # ─── User ───────────────────────────────────────────────────────────────
     UserDto:
       type: object
@@ -2529,6 +2536,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotificationPage'
+
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread notification count
+      operationId: getUnreadNotificationCount
+      responses:
+        '200':
+          description: Number of unread notifications for the current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResponse'
 
   /api/v1/notifications/{id}/read:
     patch:

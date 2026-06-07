@@ -22,4 +22,6 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
     int markAllReadByUser(@Param("user") UserEntity user);
 
     List<NotificationEntity> findByUserAndIsReadFalse(UserEntity user);
+
+    long countByUserAndIsReadFalse(UserEntity user);
 }

@@ -17,6 +17,8 @@ public interface NotificationService {
 
     MessageResponse broadcast(BroadcastRequest request);
 
+    long getUnreadCount(Long userId);
+
     // Internal helpers for other services
     void createNotification(UserEntity user, String title, String body, NotificationEntity.NotificationType type);
 }
