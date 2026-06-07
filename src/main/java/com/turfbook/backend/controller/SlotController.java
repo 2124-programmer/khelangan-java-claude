@@ -11,6 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
@@ -57,6 +60,19 @@ public class SlotController implements SlotsApi {
         UserPrincipal principal = getPrincipal();
         log.info("SlotController.bulkBlockSlots() called - courtId={}, ownerId={}, date={}", courtId, principal.getId(), request.getDate());
         return ResponseEntity.ok(venueService.bulkBlockSlots(courtId, principal.getId(), request));
+    }
+
+    @PreAuthorize("hasRole('OWNER')")
+    @PatchMapping("/api/v1/courts/{courtId}/slots/block-by-time")
+    public ResponseEntity<SlotDto> blockSlotByTime(
+            @PathVariable Long courtId,
+            @RequestParam String date,
+            @RequestParam String startTime,
+            @RequestParam String endTime) {
+        UserPrincipal principal = getPrincipal();
+        log.info("SlotController.blockSlotByTime() called - courtId={}, date={}, startTime={}, ownerId={}",
+                courtId, date, startTime, principal.getId());
+        return ResponseEntity.ok(venueService.blockSlotByTime(courtId, principal.getId(), date, startTime, endTime));
     }
 
     private UserPrincipal getPrincipal() {

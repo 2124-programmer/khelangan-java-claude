@@ -34,6 +34,8 @@ public interface VenueService {
 
     SlotDto blockSlot(Long slotId, Long ownerId);
 
+    SlotDto blockSlotByTime(Long courtId, Long ownerId, String date, String startTime, String endTime);
+
     SlotDto unblockSlot(Long slotId, Long ownerId);
 
     java.util.List<SlotDto> bulkBlockSlots(Long courtId, Long ownerId, BulkBlockRequest request);

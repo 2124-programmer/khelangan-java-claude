@@ -472,6 +472,34 @@ public class VenueServiceImpl implements VenueService {
 
     @Override
     @Transactional
+    public SlotDto blockSlotByTime(Long courtId, Long ownerId, String dateStr, String startTimeStr, String endTimeStr) {
+        CourtEntity court = courtRepository.findById(courtId)
+                .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
+        if (!court.getVenue().getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this court's venue");
+        }
+        LocalDate date      = LocalDate.parse(dateStr);
+        LocalTime startTime = LocalTime.parse(startTimeStr);
+        LocalTime endTime   = LocalTime.parse(endTimeStr);
+
+        SlotEntity slot = slotRepository
+                .findByCourtAndDateAndStartTime(court, date, startTime)
+                .orElse(SlotEntity.builder()
+                        .court(court).date(date).startTime(startTime).endTime(endTime)
+                        .price(court.effectivePricePerHour())
+                        .status(SlotEntity.SlotStatus.AVAILABLE)
+                        .build());
+
+        if (slot.getStatus() == SlotEntity.SlotStatus.BOOKED
+                || slot.getStatus() == SlotEntity.SlotStatus.HELD) {
+            throw new ConflictException("Cannot block a slot that is already booked");
+        }
+        slot.setStatus(SlotEntity.SlotStatus.BLOCKED);
+        return slotMapper.toDto(slotRepository.save(slot));
+    }
+
+    @Override
+    @Transactional
     public SlotDto unblockSlot(Long slotId, Long ownerId) {
         SlotEntity slot = getSlotOwnedBy(slotId, ownerId);
         slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
