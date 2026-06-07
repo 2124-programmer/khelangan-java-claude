@@ -547,6 +547,43 @@ public class VenueServiceImpl implements VenueService {
         return result;
     }
 
+    @Override
+    @Transactional
+    public List<SlotDto> blockSlotsByTime(Long courtId, Long ownerId, BlockSelectedRequest request) {
+        log.info("VenueService.blockSlotsByTime() called - courtId={}, ownerId={}, date={}, count={}",
+                courtId, ownerId, request.getDate(),
+                request.getStartTimes() == null ? 0 : request.getStartTimes().size());
+        CourtEntity court = courtRepository.findById(courtId)
+                .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
+        if (!court.getVenue().getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this court's venue");
+        }
+
+        LocalDate date = LocalDate.parse(request.getDate());
+        List<SlotDto> result = new ArrayList<>();
+
+        for (String startTimeStr : request.getStartTimes()) {
+            LocalTime startTime = LocalTime.parse(startTimeStr);
+            LocalTime endTime = startTime.plusHours(1);
+
+            SlotEntity slot = slotRepository
+                    .findByCourtAndDateAndStartTime(court, date, startTime)
+                    .orElse(SlotEntity.builder()
+                            .court(court).date(date).startTime(startTime).endTime(endTime)
+                            .price(court.effectivePricePerHour())
+                            .status(SlotEntity.SlotStatus.AVAILABLE)
+                            .build());
+
+            if (slot.getStatus() == SlotEntity.SlotStatus.BOOKED
+                    || slot.getStatus() == SlotEntity.SlotStatus.HELD) {
+                throw new ConflictException("Cannot block slot " + startTimeStr + " — already booked");
+            }
+            slot.setStatus(SlotEntity.SlotStatus.BLOCKED);
+            result.add(slotMapper.toDto(slotRepository.save(slot)));
+        }
+        return result;
+    }
+
     // ─── Owner Stats ───────────────────────────────────────────────────────
 
     @Override

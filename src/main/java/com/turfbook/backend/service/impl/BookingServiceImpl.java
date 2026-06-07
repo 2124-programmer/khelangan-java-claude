@@ -2,6 +2,7 @@ package com.turfbook.backend.service.impl;
 
 import com.turfbook.backend.dto.BookingDto;
 import com.turfbook.backend.dto.BookingPage;
+import com.turfbook.backend.dto.BulkCreateBookingRequest;
 import com.turfbook.backend.dto.CreateBookingRequest;
 import com.turfbook.backend.entity.*;
 import com.turfbook.backend.exception.ConflictException;
@@ -25,6 +26,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -404,6 +406,117 @@ public class BookingServiceImpl implements BookingService {
 
         log.info("Booking {} rejected by owner {}", bookingId, ownerId);
         return bookingMapper.toDto(booking);
+    }
+
+    // ─── bulkCreateBookings ────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public List<BookingDto> bulkCreateBookings(Long playerId, BulkCreateBookingRequest request) {
+        log.info("BookingService.bulkCreateBookings() called - playerId={}, courtId={}, date={}, count={}",
+                playerId, request.getCourtId(), request.getDate(),
+                request.getStartTimes() == null ? 0 : request.getStartTimes().size());
+
+        if (request.getStartTimes() == null || request.getStartTimes().isEmpty()) {
+            throw new IllegalArgumentException("startTimes must not be empty");
+        }
+
+        UserEntity player = userRepository.findById(playerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
+
+        VenueEntity venue = venueRepository.findById(request.getVenueId())
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", request.getVenueId()));
+
+        CourtEntity court = courtRepository.findById(request.getCourtId())
+                .orElseThrow(() -> new ResourceNotFoundException("Court", "id", request.getCourtId()));
+
+        if (!court.getVenue().getId().equals(venue.getId())) {
+            throw new IllegalArgumentException("Court does not belong to the specified venue");
+        }
+
+        PlatformSettingsEntity settings = settingsRepository.findById(1L)
+                .orElseGet(() -> PlatformSettingsEntity.builder()
+                        .id(1L).commissionPercent(10).convenienceFee(20).build());
+
+        UserEntity owner = venue.getOwner();
+        boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId());
+        SlotEntity.SlotStatus targetStatus = autoAccept
+                ? SlotEntity.SlotStatus.BOOKED : SlotEntity.SlotStatus.HELD;
+        LocalDate date = LocalDate.parse(request.getDate());
+
+        List<BookingDto> results = new ArrayList<>();
+
+        // Pre-load active bookings for this court+date once to avoid N+1 queries
+        List<BookingEntity> activeBookings = bookingRepository.findByCourtAndDateAndStatusIn(
+                court, date,
+                List.of(BookingEntity.BookingStatus.CONFIRMED, BookingEntity.BookingStatus.PENDING));
+
+        for (String startTimeStr : request.getStartTimes()) {
+            LocalTime startTime = LocalTime.parse(startTimeStr);
+            LocalTime endTime = startTime.plusHours(1);
+
+            SlotEntity slot = slotRepository.findByCourtAndDateAndStartTime(court, date, startTime)
+                    .orElse(null);
+
+            if (slot != null && slot.getStatus() == SlotEntity.SlotStatus.BLOCKED) {
+                throw new ConflictException("Slot " + startTimeStr + " is blocked by the owner");
+            }
+
+            boolean alreadyBooked = activeBookings.stream()
+                    .anyMatch(b -> b.getStartTime().equals(startTime));
+            if (alreadyBooked) {
+                throw new ConflictException("Slot " + startTimeStr + " is not available for booking");
+            }
+
+            int slotPrice = slot != null ? slot.getPrice() : court.effectivePricePerHour();
+            int convenienceFee = settings.getConvenienceFee();
+            int effectiveAmount = slotPrice + convenienceFee;
+            int commission = (effectiveAmount * settings.getCommissionPercent()) / 100;
+
+            if (slot == null) {
+                slot = SlotEntity.builder()
+                        .court(court).date(date).startTime(startTime).endTime(endTime)
+                        .price(slotPrice).status(targetStatus).build();
+            } else {
+                slot.setStatus(targetStatus);
+            }
+            slot = slotRepository.save(slot);
+
+            BookingEntity booking = BookingEntity.builder()
+                    .player(player).venue(venue).court(court).slot(slot)
+                    .sport(request.getSport())
+                    .date(date).startTime(startTime).endTime(endTime)
+                    .amount(effectiveAmount).convenienceFee(convenienceFee)
+                    .discount(0).commission(commission)
+                    .status(autoAccept ? BookingEntity.BookingStatus.CONFIRMED : BookingEntity.BookingStatus.PENDING)
+                    .paymentStatus(autoAccept ? BookingEntity.PaymentStatus.SUCCESS : BookingEntity.PaymentStatus.PENDING)
+                    .hasReview(false)
+                    .build();
+
+            results.add(bookingMapper.toDto(bookingRepository.save(booking)));
+        }
+
+        if (autoAccept) {
+            player.setTotalBookings(player.getTotalBookings() + results.size());
+            userRepository.save(player);
+
+            notificationService.createNotification(player, "Bookings Confirmed",
+                    String.format("%d slots confirmed at %s on %s", results.size(), venue.getName(), date),
+                    NotificationEntity.NotificationType.BOOKING);
+            notificationService.createNotification(owner, "New Bookings Received",
+                    String.format("%d new bookings by %s at %s on %s", results.size(), player.getName(), venue.getName(), date),
+                    NotificationEntity.NotificationType.BOOKING);
+        } else {
+            notificationService.createNotification(player, "Booking Requests Sent",
+                    String.format("%d slot requests sent to %s on %s. Awaiting confirmation.", results.size(), venue.getName(), date),
+                    NotificationEntity.NotificationType.BOOKING);
+            notificationService.createNotification(owner, "New Booking Requests",
+                    String.format("%d booking requests from %s for %s on %s", results.size(), player.getName(), venue.getName(), date),
+                    NotificationEntity.NotificationType.BOOKING);
+        }
+
+        log.info("Bulk booking created: {} bookings, player={}, venue={}", results.size(), playerId, venue.getId());
+        return results;
     }
 
     // ─── adminListBookings ─────────────────────────────────────────────────

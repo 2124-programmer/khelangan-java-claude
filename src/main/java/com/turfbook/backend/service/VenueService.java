@@ -40,5 +40,7 @@ public interface VenueService {
 
     java.util.List<SlotDto> bulkBlockSlots(Long courtId, Long ownerId, BulkBlockRequest request);
 
+    java.util.List<SlotDto> blockSlotsByTime(Long courtId, Long ownerId, BlockSelectedRequest request);
+
     OwnerStatsDto getOwnerStats(Long ownerId);
 }

@@ -1,6 +1,7 @@
 package com.turfbook.backend.controller;
 
 import com.turfbook.backend.api.SlotsApi;
+import com.turfbook.backend.dto.BlockSelectedRequest;
 import com.turfbook.backend.dto.BulkBlockRequest;
 import com.turfbook.backend.dto.CourtSlotsDto;
 import com.turfbook.backend.dto.SlotDto;
@@ -13,6 +14,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -73,6 +76,19 @@ public class SlotController implements SlotsApi {
         log.info("SlotController.blockSlotByTime() called - courtId={}, date={}, startTime={}, ownerId={}",
                 courtId, date, startTime, principal.getId());
         return ResponseEntity.ok(venueService.blockSlotByTime(courtId, principal.getId(), date, startTime, endTime));
+    }
+
+    @PreAuthorize("hasRole('OWNER')")
+    @PostMapping("/api/v1/courts/{courtId}/slots/block-selected")
+    public ResponseEntity<List<SlotDto>> blockSlotsByTime(
+            @PathVariable Long courtId,
+            @RequestBody BlockSelectedRequest request) {
+        UserPrincipal principal = getPrincipal();
+        log.info("SlotController.blockSlotsByTime() called - courtId={}, date={}, count={}, ownerId={}",
+                courtId, request.getDate(),
+                request.getStartTimes() == null ? 0 : request.getStartTimes().size(),
+                principal.getId());
+        return ResponseEntity.ok(venueService.blockSlotsByTime(courtId, principal.getId(), request));
     }
 
     private UserPrincipal getPrincipal() {

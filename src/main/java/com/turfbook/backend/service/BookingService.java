@@ -2,14 +2,18 @@ package com.turfbook.backend.service;
 
 import com.turfbook.backend.dto.BookingDto;
 import com.turfbook.backend.dto.BookingPage;
+import com.turfbook.backend.dto.BulkCreateBookingRequest;
 import com.turfbook.backend.dto.CreateBookingRequest;
 import com.turfbook.backend.entity.UserEntity;
+import java.util.List;
 
 public interface BookingService {
 
     BookingPage listBookings(UserEntity currentUser, String status, int page, int size);
 
     BookingDto createBooking(Long playerId, CreateBookingRequest request);
+
+    List<BookingDto> bulkCreateBookings(Long playerId, BulkCreateBookingRequest request);
 
     BookingDto getBooking(Long id, UserEntity currentUser);
 
