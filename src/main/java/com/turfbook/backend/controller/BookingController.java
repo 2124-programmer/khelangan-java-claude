@@ -40,8 +40,8 @@ public class BookingController implements BookingsApi {
     @PreAuthorize("hasRole('PLAYER')")
     public ResponseEntity<BookingDto> createBooking(CreateBookingRequest request) {
         UserPrincipal principal = getCurrentPrincipal();
-        log.info("BookingController.createBooking() called - userId={}, slotId={}, venueId={}",
-                principal.getId(), request.getSlotId(), request.getVenueId());
+        log.info("BookingController.createBooking() called - userId={}, venueId={}, date={}, startTime={}",
+                principal.getId(), request.getVenueId(), request.getDate(), request.getStartTime());
         BookingDto dto = bookingService.createBooking(principal.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }

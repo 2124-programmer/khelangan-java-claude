@@ -9,7 +9,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface SlotRepository extends JpaRepository<SlotEntity, Long> {
@@ -17,6 +19,8 @@ public interface SlotRepository extends JpaRepository<SlotEntity, Long> {
     List<SlotEntity> findByCourtAndDateOrderByStartTime(CourtEntity court, LocalDate date);
 
     List<SlotEntity> findByCourtAndDate(CourtEntity court, LocalDate date);
+
+    Optional<SlotEntity> findByCourtAndDateAndStartTime(CourtEntity court, LocalDate date, LocalTime startTime);
 
     @Modifying
     @Query("UPDATE SlotEntity s SET s.status = :newStatus WHERE s.court = :court AND s.date = :date AND s.status = :availableStatus")

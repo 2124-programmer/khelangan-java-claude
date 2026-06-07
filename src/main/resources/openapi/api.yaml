@@ -730,7 +730,7 @@ components:
 
     CreateBookingRequest:
       type: object
-      required: [venueId, courtId, slotId, sport]
+      required: [venueId, courtId, date, startTime, endTime, sport]
       properties:
         venueId:
           type: integer
@@ -738,9 +738,13 @@ components:
         courtId:
           type: integer
           format: int64
-        slotId:
-          type: integer
-          format: int64
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+        endTime:
+          type: string
         sport:
           type: string
         couponCode:

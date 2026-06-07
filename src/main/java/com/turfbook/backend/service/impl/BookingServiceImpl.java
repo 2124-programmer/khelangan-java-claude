@@ -21,8 +21,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -72,19 +75,17 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional
     public BookingDto createBooking(Long playerId, CreateBookingRequest request) {
-        log.info("BookingService.createBooking() called - playerId={}, slotId={}, venueId={}", playerId, request.getSlotId(), request.getVenueId());
+        log.info("BookingService.createBooking() called - playerId={}, venueId={}, date={}, startTime={}",
+                playerId, request.getVenueId(), request.getDate(), request.getStartTime());
 
         // 1. Load player
         UserEntity player = userRepository.findById(playerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
 
-        // 2. Load and verify slot is AVAILABLE
-        SlotEntity slot = slotRepository.findById(request.getSlotId())
-                .orElseThrow(() -> new ResourceNotFoundException("Slot", "id", request.getSlotId()));
-
-        if (slot.getStatus() != SlotEntity.SlotStatus.AVAILABLE) {
-            throw new ConflictException("Slot is not available for booking. Current status: " + slot.getStatus());
-        }
+        // 2. Extract date and time from request
+        LocalDate date      = request.getDate();
+        LocalTime startTime = LocalTime.parse(request.getStartTime());
+        LocalTime endTime   = LocalTime.parse(request.getEndTime());
 
         // 3. Load venue and court
         VenueEntity venue = venueRepository.findById(request.getVenueId())
@@ -97,11 +98,24 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalArgumentException("Court does not belong to the specified venue");
         }
 
-        if (!slot.getCourt().getId().equals(court.getId())) {
-            throw new IllegalArgumentException("Slot does not belong to the specified court");
+        // 4. Find existing slot (BLOCKED / old-AVAILABLE from prior cancellations) or null for fresh hours
+        SlotEntity slot = slotRepository.findByCourtAndDateAndStartTime(court, date, startTime)
+                .orElse(null);
+
+        if (slot != null && slot.getStatus() == SlotEntity.SlotStatus.BLOCKED) {
+            throw new ConflictException("Slot is blocked by the owner");
         }
 
-        // 4. Platform settings
+        // 5. Double-booking guard via active bookings
+        boolean alreadyBooked = bookingRepository
+                .findByCourtAndDateAndStatusIn(court, date,
+                        List.of(BookingEntity.BookingStatus.CONFIRMED, BookingEntity.BookingStatus.PENDING))
+                .stream().anyMatch(b -> b.getStartTime().equals(startTime));
+        if (alreadyBooked) {
+            throw new ConflictException("Slot is not available for booking");
+        }
+
+        // 6. Platform settings
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(() -> PlatformSettingsEntity.builder()
                         .id(1L)
@@ -109,7 +123,7 @@ public class BookingServiceImpl implements BookingService {
                         .convenienceFee(20)
                         .build());
 
-        int slotPrice = slot.getPrice();
+        int slotPrice = slot != null ? slot.getPrice() : court.effectivePricePerHour();
         int convenienceFee = settings.getConvenienceFee();
         int discount = 0;
         String couponCode = null;
@@ -147,16 +161,24 @@ public class BookingServiceImpl implements BookingService {
         int effectiveAmount = slotPrice + convenienceFee - discount;
         int commission = (effectiveAmount * settings.getCommissionPercent()) / 100;
 
-        // 7. Determine initial status based on owner's auto-accept setting
+        // 7. Determine initial status and create/update slot (never persisted as AVAILABLE)
         UserEntity owner = venue.getOwner();
         boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId());
+        SlotEntity.SlotStatus targetStatus = autoAccept ? SlotEntity.SlotStatus.BOOKED : SlotEntity.SlotStatus.HELD;
 
-        if (autoAccept) {
-            slot.setStatus(SlotEntity.SlotStatus.BOOKED);
+        if (slot == null) {
+            slot = SlotEntity.builder()
+                    .court(court)
+                    .date(date)
+                    .startTime(startTime)
+                    .endTime(endTime)
+                    .price(slotPrice)
+                    .status(targetStatus)
+                    .build();
         } else {
-            slot.setStatus(SlotEntity.SlotStatus.HELD);
+            slot.setStatus(targetStatus);
         }
-        slotRepository.save(slot);
+        slot = slotRepository.save(slot);
 
         // 8. Create booking
         BookingEntity booking = BookingEntity.builder()
@@ -165,9 +187,9 @@ public class BookingServiceImpl implements BookingService {
                 .court(court)
                 .slot(slot)
                 .sport(request.getSport())
-                .date(slot.getDate())
-                .startTime(slot.getStartTime())
-                .endTime(slot.getEndTime())
+                .date(date)
+                .startTime(startTime)
+                .endTime(endTime)
                 .amount(effectiveAmount)
                 .convenienceFee(convenienceFee)
                 .discount(discount)

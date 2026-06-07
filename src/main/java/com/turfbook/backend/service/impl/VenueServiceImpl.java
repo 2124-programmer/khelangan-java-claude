@@ -359,7 +359,7 @@ public class VenueServiceImpl implements VenueService {
     // ─── Slots ─────────────────────────────────────────────────────────────
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public List<SlotDto> listSlots(Long courtId, LocalDate date) {
         log.info("VenueService.listSlots() called - courtId={}, date={}", courtId, date);
         CourtEntity court = courtRepository.findById(courtId)
@@ -368,7 +368,7 @@ public class VenueServiceImpl implements VenueService {
         int openHour  = Integer.parseInt(court.effectiveOpenTime().split(":")[0]);
         int closeHour = Integer.parseInt(court.effectiveCloseTime().split(":")[0]);
 
-        // Index existing DB slots by startTime (for BLOCKED status and IDs)
+        // Index existing DB slots by startTime (only BLOCKED/HELD/BOOKED rows live here now)
         Map<LocalTime, SlotEntity> existingByStart = slotRepository
                 .findByCourtAndDateOrderByStartTime(court, date)
                 .stream()
@@ -391,21 +391,23 @@ public class VenueServiceImpl implements VenueService {
             LocalTime start = LocalTime.of(h, 0);
             LocalTime end   = LocalTime.of(h + 1, 0);
 
-            //ToDo - need to remove auto save slots
-            // Auto-create slot row if it does not exist yet (required by booking flow)
             SlotEntity slot = existingByStart.get(start);
+
             if (slot == null) {
-                slot = slotRepository.save(SlotEntity.builder()
-                        .court(court)
-                        .date(date)
-                        .startTime(start)
-                        .endTime(end)
-                        .status(SlotEntity.SlotStatus.AVAILABLE)
-                        .price(court.effectivePricePerHour())
-                        .build());
+                // No DB record — return a virtual AVAILABLE slot without persisting
+                SlotDto dto = new SlotDto();
+                dto.setId(null);
+                dto.setCourtId(courtId);
+                dto.setDate(date);
+                dto.setStartTime(start.toString());
+                dto.setEndTime(end.toString());
+                dto.setStatus(SlotDto.StatusEnum.AVAILABLE);
+                dto.setPrice(court.effectivePricePerHour());
+                result.add(dto);
+                continue;
             }
 
-            // BLOCKED is owner-managed on the entity; BOOKED/HELD come from bookings
+            // DB slot exists — BLOCKED is owner-managed; BOOKED/HELD derived from bookings
             SlotDto.StatusEnum status;
             if (slot.getStatus() == SlotEntity.SlotStatus.BLOCKED) {
                 status = SlotDto.StatusEnum.BLOCKED;
@@ -485,10 +487,36 @@ public class VenueServiceImpl implements VenueService {
         if (!court.getVenue().getOwner().getId().equals(ownerId)) {
             throw new UnauthorizedException("You do not own this court's venue");
         }
-        slotRepository.bulkUpdateStatusByCourtAndDate(court, request.getDate(),
-                SlotEntity.SlotStatus.BLOCKED, SlotEntity.SlotStatus.AVAILABLE);
-        return slotRepository.findByCourtAndDateOrderByStartTime(court, request.getDate())
-                .stream().map(slotMapper::toDto).toList();
+
+        int openHour  = Integer.parseInt(court.effectiveOpenTime().split(":")[0]);
+        int closeHour = Integer.parseInt(court.effectiveCloseTime().split(":")[0]);
+        LocalDate blockDate = request.getDate();
+
+        List<SlotDto> result = new ArrayList<>();
+        for (int h = openHour; h < closeHour; h++) {
+            LocalTime start = LocalTime.of(h, 0);
+            LocalTime end   = LocalTime.of(h + 1, 0);
+
+            SlotEntity slot = slotRepository
+                    .findByCourtAndDateAndStartTime(court, blockDate, start)
+                    .orElse(SlotEntity.builder()
+                            .court(court)
+                            .date(blockDate)
+                            .startTime(start)
+                            .endTime(end)
+                            .price(court.effectivePricePerHour())
+                            .status(SlotEntity.SlotStatus.AVAILABLE)
+                            .build());
+
+            // Never override an active booking
+            if (slot.getStatus() != SlotEntity.SlotStatus.BOOKED
+                    && slot.getStatus() != SlotEntity.SlotStatus.HELD) {
+                slot.setStatus(SlotEntity.SlotStatus.BLOCKED);
+                slot = slotRepository.save(slot);
+            }
+            result.add(slotMapper.toDto(slot));
+        }
+        return result;
     }
 
     // ─── Owner Stats ───────────────────────────────────────────────────────
