@@ -91,3 +91,5 @@ ehthumbs.db
 *.tar.gz
 *.rar
 uploads/
+.env.uat
+.env.*
