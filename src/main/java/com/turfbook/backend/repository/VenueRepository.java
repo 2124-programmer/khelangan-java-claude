@@ -40,6 +40,8 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
     // For admin stats: pending approvals
     long countByStatusIn(List<VenueEntity.VenueStatus> statuses);
 
+    long countByOwner(UserEntity owner);
+
     boolean existsByOwnerAndName(UserEntity owner, String name);
 
     boolean existsByOwnerAndNameAndIdNot(UserEntity owner, String name, Long id);

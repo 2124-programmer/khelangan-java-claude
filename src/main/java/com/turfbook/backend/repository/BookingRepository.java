@@ -102,6 +102,47 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             Collection<BookingEntity.BookingStatus> statuses
     );
 
+    // Dashboard summary: bookings whose slot date = given date and status in the provided set
+    @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND b.date = :date AND b.status IN :statuses")
+    long countByOwnerAndDateAndStatusIn(
+            @Param("owner") UserEntity owner,
+            @Param("date") LocalDate date,
+            @Param("statuses") Collection<BookingEntity.BookingStatus> statuses
+    );
+
+    // Dashboard summary: CONFIRMED bookings with slot date strictly after :after
+    @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND b.date > :after AND b.status = :status")
+    long countByOwnerAndDateAfterAndStatus(
+            @Param("owner") UserEntity owner,
+            @Param("after") LocalDate after,
+            @Param("status") BookingEntity.BookingStatus status
+    );
+
+    // Dashboard summary: bookings with status = :status and slot date in [:from, :to]
+    @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND b.status = :status AND b.date >= :from AND b.date <= :to")
+    long countByOwnerAndStatusAndSlotDateBetween(
+            @Param("owner") UserEntity owner,
+            @Param("status") BookingEntity.BookingStatus status,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to
+    );
+
+    // Dashboard summary: cancelled/rejected bookings created within the window
+    @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND b.status IN :statuses AND b.createdAt >= :from")
+    long countByOwnerAndStatusInAndCreatedAtAfter(
+            @Param("owner") UserEntity owner,
+            @Param("statuses") Collection<BookingEntity.BookingStatus> statuses,
+            @Param("from") LocalDateTime from
+    );
+
+    // Dashboard summary: distinct customers who have ever booked this owner's venues
+    @Query("SELECT COUNT(DISTINCT b.player) FROM BookingEntity b WHERE b.venue.owner = :owner")
+    long countDistinctPlayersByOwner(@Param("owner") UserEntity owner);
+
     // Group booking lookup
     List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
 

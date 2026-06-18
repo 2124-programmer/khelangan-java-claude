@@ -1172,6 +1172,69 @@ components:
           type: integer
           format: int64
 
+    # ─── Owner Dashboard Summary ─────────────────────────────────────────────
+    OwnerDashboardSummary:
+      type: object
+      required: [earnings, bookings, stats]
+      properties:
+        earnings:
+          $ref: '#/components/schemas/DashboardEarnings'
+        bookings:
+          $ref: '#/components/schemas/DashboardBookingCounts'
+        stats:
+          $ref: '#/components/schemas/DashboardStats'
+
+    DashboardEarnings:
+      type: object
+      required: [todayAmount, weekAmount, monthAmount, pendingAmount, todayBookingCount]
+      properties:
+        todayAmount:
+          type: integer
+          format: int64
+        weekAmount:
+          type: integer
+          format: int64
+        monthAmount:
+          type: integer
+          format: int64
+        pendingAmount:
+          type: integer
+          format: int64
+        todayBookingCount:
+          type: integer
+          format: int64
+
+    DashboardBookingCounts:
+      type: object
+      required: [today, upcoming, completedLast30Days, cancelledLast30Days]
+      properties:
+        today:
+          type: integer
+          format: int64
+        upcoming:
+          type: integer
+          format: int64
+        completedLast30Days:
+          type: integer
+          format: int64
+        cancelledLast30Days:
+          type: integer
+          format: int64
+
+    DashboardStats:
+      type: object
+      required: [usersConnected, venueCount, courtCount]
+      properties:
+        usersConnected:
+          type: integer
+          format: int64
+        venueCount:
+          type: integer
+          format: int64
+        courtCount:
+          type: integer
+          format: int64
+
     # ─── Platform Settings ───────────────────────────────────────────────────
     PlatformSettingsDto:
       type: object
@@ -2659,6 +2722,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OwnerStatsDto'
+
+  /api/v1/owner/dashboard/summary:
+    get:
+      tags: [OwnerDashboard]
+      operationId: getOwnerDashboardSummary
+      summary: Aggregated dashboard metrics for the authenticated owner
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerDashboardSummary'
+        '401':
+          description: Unauthorized
 
   # ─── Settings ─────────────────────────────────────────────────────────────
   /api/v1/admin/settings:
