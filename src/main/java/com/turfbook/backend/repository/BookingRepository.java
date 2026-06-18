@@ -139,6 +139,11 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             @Param("from") LocalDateTime from
     );
 
+    // Dashboard summary: pending booking requests awaiting owner action
+    @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner AND b.status = :status")
+    long countByOwnerAndStatus(@Param("owner") UserEntity owner,
+                               @Param("status") BookingEntity.BookingStatus status);
+
     // Dashboard summary: distinct customers who have ever booked this owner's venues
     @Query("SELECT COUNT(DISTINCT b.player) FROM BookingEntity b WHERE b.venue.owner = :owner")
     long countDistinctPlayersByOwner(@Param("owner") UserEntity owner);

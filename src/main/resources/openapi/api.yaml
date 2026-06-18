@@ -1206,8 +1206,11 @@ components:
 
     DashboardBookingCounts:
       type: object
-      required: [today, upcoming, completedLast30Days, cancelledLast30Days]
+      required: [requests, today, upcoming, completedLast30Days, cancelledLast30Days]
       properties:
+        requests:
+          type: integer
+          format: int64
         today:
           type: integer
           format: int64

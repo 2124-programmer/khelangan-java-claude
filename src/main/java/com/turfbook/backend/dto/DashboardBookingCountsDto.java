@@ -12,6 +12,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class DashboardBookingCountsDto {
 
+    @JsonProperty("requests")
+    private long requests;
+
     @JsonProperty("today")
     private long today;
 

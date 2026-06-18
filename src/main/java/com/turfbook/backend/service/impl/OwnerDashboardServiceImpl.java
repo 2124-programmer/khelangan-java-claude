@@ -65,6 +65,9 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
         long todayBookingCount  = bookingRepository.countByOwnerAndDateRange(owner, todayStart, todayEnd);
 
         // ── Booking counts (slot date-based) ──
+        long pendingRequests = bookingRepository.countByOwnerAndStatus(
+                owner, BookingEntity.BookingStatus.PENDING);
+
         List<BookingEntity.BookingStatus> activeStatuses = List.of(
                 BookingEntity.BookingStatus.PENDING,
                 BookingEntity.BookingStatus.CONFIRMED,
@@ -99,6 +102,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                         .todayBookingCount(todayBookingCount)
                         .build())
                 .bookings(DashboardBookingCountsDto.builder()
+                        .requests(pendingRequests)
                         .today(todayBookings)
                         .upcoming(upcoming)
                         .completedLast30Days(completedLast30)
