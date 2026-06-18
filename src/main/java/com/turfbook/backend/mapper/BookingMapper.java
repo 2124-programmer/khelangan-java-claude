@@ -10,8 +10,10 @@ public interface BookingMapper {
 
     @Mapping(target = "playerId", source = "player.id")
     @Mapping(target = "playerName", source = "player.name")
+    @Mapping(target = "playerPhone", source = "player.phone")
     @Mapping(target = "venueId", source = "venue.id")
     @Mapping(target = "venueName", source = "venue.name")
+    @Mapping(target = "venuePhone", source = "venue.contactPhone")
     @Mapping(target = "courtId", source = "court.id")
     @Mapping(target = "courtName", source = "court.name")
     @Mapping(target = "slotId", source = "slot.id")

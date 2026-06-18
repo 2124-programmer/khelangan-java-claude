@@ -730,6 +730,14 @@ components:
         groupId:
           type: string
           nullable: true
+        playerPhone:
+          type: string
+          nullable: true
+          description: Player's contact phone (owner-scoped responses only)
+        venuePhone:
+          type: string
+          nullable: true
+          description: Venue contact phone (player-scoped responses)
 
     CreateBookingRequest:
       type: object
