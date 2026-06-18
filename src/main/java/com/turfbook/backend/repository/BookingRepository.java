@@ -28,12 +28,29 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             Pageable pageable
     );
 
-    // Owner: bookings for their venues
+    // Owner: bookings for their venues (no date filter – legacy path)
     @Query("SELECT b FROM BookingEntity b WHERE b.venue.owner = :owner " +
            "AND (:status IS NULL OR b.status = :status) ORDER BY b.createdAt DESC")
     Page<BookingEntity> findByVenueOwner(
             @Param("owner") UserEntity owner,
             @Param("status") BookingEntity.BookingStatus status,
+            Pageable pageable
+    );
+
+    // Owner: bookings with optional exact-date and date-range filtering
+    // date     → exact match (Today tab)
+    // dateFrom → b.date >= dateFrom (Upcoming tab)
+    // Both nullable; when both are null this behaves like findByVenueOwner
+    @Query("SELECT b FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND (:status IS NULL OR b.status = :status) " +
+           "AND (:date IS NULL OR b.date = :date) " +
+           "AND (:dateFrom IS NULL OR b.date >= :dateFrom) " +
+           "ORDER BY b.date ASC, b.startTime ASC")
+    Page<BookingEntity> findByVenueOwnerWithDateFilter(
+            @Param("owner") UserEntity owner,
+            @Param("status") BookingEntity.BookingStatus status,
+            @Param("date") LocalDate date,
+            @Param("dateFrom") LocalDate dateFrom,
             Pageable pageable
     );
 

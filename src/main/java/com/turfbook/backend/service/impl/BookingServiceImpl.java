@@ -50,8 +50,11 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional(readOnly = true)
-    public BookingPage listBookings(UserEntity currentUser, String status, int page, int size) {
-        log.info("BookingService.listBookings() called - userId={}, role={}, status={}", currentUser.getId(), currentUser.getRole(), status);
+    public BookingPage listBookings(UserEntity currentUser, String status,
+                                    java.time.LocalDate date, java.time.LocalDate dateFrom,
+                                    int page, int size) {
+        log.info("BookingService.listBookings() called - userId={}, role={}, status={}, date={}, dateFrom={}",
+                currentUser.getId(), currentUser.getRole(), status, date, dateFrom);
         Pageable pageable = PageRequest.of(page, size);
         BookingEntity.BookingStatus bookingStatus = parseStatus(status);
 
@@ -66,7 +69,15 @@ public class BookingServiceImpl implements BookingService {
                     entityPage = bookingRepository.findByPlayerOrderByCreatedAtDesc(currentUser, pageable);
                 }
             }
-            case OWNER -> entityPage = bookingRepository.findByVenueOwner(currentUser, bookingStatus, pageable);
+            case OWNER -> {
+                // Use date-aware query whenever a date filter is present
+                if (date != null || dateFrom != null) {
+                    entityPage = bookingRepository.findByVenueOwnerWithDateFilter(
+                            currentUser, bookingStatus, date, dateFrom, pageable);
+                } else {
+                    entityPage = bookingRepository.findByVenueOwner(currentUser, bookingStatus, pageable);
+                }
+            }
             default -> entityPage = bookingRepository.findAllByStatus(bookingStatus, pageable);
         }
 

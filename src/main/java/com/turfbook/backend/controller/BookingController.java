@@ -11,13 +11,16 @@ import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.BookingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Slf4j
@@ -30,12 +33,18 @@ public class BookingController implements BookingsApi {
 
     @Override
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<BookingPage> listBookings(String status, Integer page, Integer size) {
+    public ResponseEntity<BookingPage> listBookings(
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "date", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
+            @RequestParam(value = "size", required = false, defaultValue = "20") Integer size) {
         UserPrincipal principal = getCurrentPrincipal();
-        log.info("BookingController.listBookings() called - userId={}, status={}", principal.getId(), status);
+        log.info("BookingController.listBookings() called - userId={}, status={}, date={}, dateFrom={}",
+                principal.getId(), status, date, dateFrom);
         UserEntity currentUser = getUserEntity(principal.getId());
         BookingPage result = bookingService.listBookings(
-                currentUser, status,
+                currentUser, status, date, dateFrom,
                 page != null ? page : 0,
                 size != null ? size : 20);
         return ResponseEntity.ok(result);

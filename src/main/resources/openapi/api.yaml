@@ -2025,6 +2025,18 @@ paths:
           in: query
           schema:
             type: string
+        - name: date
+          in: query
+          description: Exact booking date filter (ISO-8601, e.g. 2025-06-18). Used by Today tab.
+          schema:
+            type: string
+            format: date
+        - name: dateFrom
+          in: query
+          description: Lower-bound date filter inclusive (ISO-8601). Used by Upcoming tab.
+          schema:
+            type: string
+            format: date
         - name: page
           in: query
           schema:
