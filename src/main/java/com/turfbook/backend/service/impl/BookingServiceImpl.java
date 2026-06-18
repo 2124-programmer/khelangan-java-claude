@@ -735,6 +735,85 @@ public class BookingServiceImpl implements BookingService {
         return results;
     }
 
+    // ─── checkInBooking ────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public BookingDto checkInBooking(Long bookingId, Long ownerId) {
+        log.info("BookingService.checkInBooking() called - bookingId={}, ownerId={}", bookingId, ownerId);
+        BookingEntity booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", bookingId));
+
+        if (!booking.getVenue().getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+
+        if (booking.getStatus() != BookingEntity.BookingStatus.CONFIRMED) {
+            throw new ConflictException(
+                    "Only CONFIRMED bookings can be checked in. Current status: " + booking.getStatus());
+        }
+
+        booking.setStatus(BookingEntity.BookingStatus.CHECKED_IN);
+        booking = bookingRepository.save(booking);
+
+        notificationService.createNotification(
+                booking.getPlayer(),
+                "Check-In Successful",
+                String.format("You have been checked in at %s on %s (%s – %s). Enjoy your game!",
+                        booking.getVenue().getName(), booking.getDate(),
+                        booking.getStartTime(), booking.getEndTime()),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        log.info("Booking {} checked in by owner {}", bookingId, ownerId);
+        return bookingMapper.toDto(booking);
+    }
+
+    // ─── checkInBookingGroup ───────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public List<BookingDto> checkInBookingGroup(String groupId, Long ownerId) {
+        log.info("BookingService.checkInBookingGroup() called - groupId={}, ownerId={}", groupId, ownerId);
+        List<BookingEntity> bookings = bookingRepository.findByGroupIdOrderByStartTimeAsc(groupId);
+        if (bookings.isEmpty()) {
+            throw new ResourceNotFoundException("BookingGroup", "groupId", groupId);
+        }
+
+        VenueEntity venue = bookings.get(0).getVenue();
+        if (!venue.getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+
+        List<BookingDto> results = new ArrayList<>();
+        for (BookingEntity booking : bookings) {
+            if (booking.getStatus() != BookingEntity.BookingStatus.CONFIRMED) continue;
+            booking.setStatus(BookingEntity.BookingStatus.CHECKED_IN);
+            results.add(bookingMapper.toDto(bookingRepository.save(booking)));
+        }
+
+        if (results.isEmpty()) {
+            throw new ConflictException("No CONFIRMED bookings found in group to check in");
+        }
+
+        UserEntity player = bookings.get(0).getPlayer();
+        LocalDate date = bookings.get(0).getDate();
+        String slotSummary = results.stream()
+                .map(r -> r.getStartTime() + "–" + r.getEndTime())
+                .reduce((a, b) -> a + ", " + b).orElse("");
+
+        notificationService.createNotification(
+                player,
+                "Check-In Successful",
+                String.format("You have been checked in for %d slot(s) at %s on %s (%s). Enjoy your game!",
+                        results.size(), venue.getName(), date, slotSummary),
+                NotificationEntity.NotificationType.BOOKING
+        );
+
+        log.info("BookingGroup {} checked in by owner {}: {} bookings updated", groupId, ownerId, results.size());
+        return results;
+    }
+
     // ─── adminListBookings ─────────────────────────────────────────────────
 
     @Override

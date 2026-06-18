@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -101,6 +102,23 @@ public class BookingController implements BookingsApi {
         UserPrincipal principal = getCurrentPrincipal();
         log.info("BookingController.cancelBookingGroup() called - groupId={}, userId={}", groupId, principal.getId());
         List<BookingDto> results = bookingService.cancelBookingGroup(groupId, principal.getId());
+        return ResponseEntity.ok(results);
+    }
+
+    @PatchMapping("/api/v1/bookings/{id}/check-in")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<BookingDto> checkInBooking(@PathVariable Long id) {
+        UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.checkInBooking() called - id={}, ownerId={}", id, principal.getId());
+        return ResponseEntity.ok(bookingService.checkInBooking(id, principal.getId()));
+    }
+
+    @PostMapping("/api/v1/bookings/group/{groupId}/check-in")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<List<BookingDto>> checkInBookingGroup(@PathVariable String groupId) {
+        UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.checkInBookingGroup() called - groupId={}, ownerId={}", groupId, principal.getId());
+        List<BookingDto> results = bookingService.checkInBookingGroup(groupId, principal.getId());
         return ResponseEntity.ok(results);
     }
 

@@ -18,7 +18,7 @@ import java.time.LocalTime;
 public class BookingEntity {
 
     public enum BookingStatus {
-        PENDING, CONFIRMED, COMPLETED, CANCELLED, REJECTED, EXPIRED
+        PENDING, CONFIRMED, CHECKED_IN, COMPLETED, CANCELLED, REJECTED, EXPIRED
     }
 
     public enum PaymentStatus {
