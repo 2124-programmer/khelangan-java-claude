@@ -60,9 +60,17 @@ public class BookingServiceImpl implements BookingService {
 
         Page<BookingEntity> entityPage;
 
+        // "Completed" tab must also surface legacy CHECKED_IN rows
+        final List<BookingEntity.BookingStatus> completedStatuses =
+                List.of(BookingEntity.BookingStatus.COMPLETED, BookingEntity.BookingStatus.CHECKED_IN);
+        final boolean isCompletedQuery = "COMPLETED".equalsIgnoreCase(status);
+
         switch (currentUser.getRole()) {
             case PLAYER -> {
-                if (bookingStatus != null) {
+                if (isCompletedQuery) {
+                    entityPage = bookingRepository.findByPlayerAndStatusInOrderByCreatedAtDesc(
+                            currentUser, completedStatuses, pageable);
+                } else if (bookingStatus != null) {
                     entityPage = bookingRepository.findByPlayerAndStatusOrderByCreatedAtDesc(
                             currentUser, bookingStatus, pageable);
                 } else {
@@ -70,8 +78,10 @@ public class BookingServiceImpl implements BookingService {
                 }
             }
             case OWNER -> {
-                // Use date-aware query whenever a date filter is present
-                if (date != null || dateFrom != null) {
+                if (isCompletedQuery) {
+                    entityPage = bookingRepository.findByVenueOwnerAndStatusIn(
+                            currentUser, completedStatuses, pageable);
+                } else if (date != null || dateFrom != null) {
                     entityPage = bookingRepository.findByVenueOwnerWithDateFilter(
                             currentUser, bookingStatus, date, dateFrom, pageable);
                 } else {
@@ -753,7 +763,7 @@ public class BookingServiceImpl implements BookingService {
                     "Only CONFIRMED bookings can be checked in. Current status: " + booking.getStatus());
         }
 
-        booking.setStatus(BookingEntity.BookingStatus.CHECKED_IN);
+        booking.setStatus(BookingEntity.BookingStatus.COMPLETED);
         booking = bookingRepository.save(booking);
 
         notificationService.createNotification(
@@ -788,7 +798,7 @@ public class BookingServiceImpl implements BookingService {
         List<BookingDto> results = new ArrayList<>();
         for (BookingEntity booking : bookings) {
             if (booking.getStatus() != BookingEntity.BookingStatus.CONFIRMED) continue;
-            booking.setStatus(BookingEntity.BookingStatus.CHECKED_IN);
+            booking.setStatus(BookingEntity.BookingStatus.COMPLETED);
             results.add(bookingMapper.toDto(bookingRepository.save(booking)));
         }
 

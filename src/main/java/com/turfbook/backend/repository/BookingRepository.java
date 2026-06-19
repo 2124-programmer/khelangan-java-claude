@@ -161,6 +161,22 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
 
     boolean existsByPlayerAndVenueAndStatus(UserEntity player, VenueEntity venue, BookingEntity.BookingStatus status);
 
+    boolean existsByPlayerAndVenueAndStatusIn(UserEntity player, VenueEntity venue, Collection<BookingEntity.BookingStatus> statuses);
+
+    Page<BookingEntity> findByPlayerAndStatusInOrderByCreatedAtDesc(
+            UserEntity player,
+            java.util.Collection<BookingEntity.BookingStatus> statuses,
+            Pageable pageable
+    );
+
+    @Query("SELECT b FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND b.status IN :statuses ORDER BY b.createdAt DESC")
+    Page<BookingEntity> findByVenueOwnerAndStatusIn(
+            @Param("owner") UserEntity owner,
+            @Param("statuses") java.util.Collection<BookingEntity.BookingStatus> statuses,
+            Pageable pageable
+    );
+
     // Group booking lookup
     List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
 

@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -63,7 +64,9 @@ public class ReviewServiceImpl implements ReviewService {
         UserEntity player = requireUser(playerId);
         VenueEntity venue = requireVenue(venueId);
 
-        if (!bookingRepository.existsByPlayerAndVenueAndStatus(player, venue, BookingEntity.BookingStatus.COMPLETED)) {
+        List<BookingEntity.BookingStatus> doneStatuses =
+                List.of(BookingEntity.BookingStatus.COMPLETED, BookingEntity.BookingStatus.CHECKED_IN);
+        if (!bookingRepository.existsByPlayerAndVenueAndStatusIn(player, venue, doneStatuses)) {
             throw new ForbiddenException("You must have a completed booking at this venue to leave a review");
         }
         if (reviewRepository.existsByVenueAndPlayer(venue, player)) {

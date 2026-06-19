@@ -14,7 +14,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: false
+    show-sql: true
     open-in-view: false
     properties:
       hibernate:
@@ -30,7 +30,7 @@ spring:
     enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: false
-    validate-on-migrate: true
+    validate-on-migrate: false
 
   jackson:
     serialization:
