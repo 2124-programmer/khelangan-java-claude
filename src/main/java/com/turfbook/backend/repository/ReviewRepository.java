@@ -20,7 +20,9 @@ public interface ReviewRepository extends JpaRepository<ReviewEntity, Long> {
     @Query("SELECT r FROM ReviewEntity r WHERE r.venue.owner = :owner ORDER BY r.createdAt DESC")
     Page<ReviewEntity> findByVenueOwner(@Param("owner") UserEntity owner, Pageable pageable);
 
-    Optional<ReviewEntity> findByBookingId(Long bookingId);
+    Optional<ReviewEntity> findByVenueAndPlayer(VenueEntity venue, UserEntity player);
+
+    boolean existsByVenueAndPlayer(VenueEntity venue, UserEntity player);
 
     @Query("SELECT AVG(r.rating) FROM ReviewEntity r WHERE r.venue = :venue")
     Double avgRatingByVenue(@Param("venue") VenueEntity venue);

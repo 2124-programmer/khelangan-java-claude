@@ -89,6 +89,17 @@ public class BookingController implements BookingsApi {
     }
 
     @Override
+    @PreAuthorize("hasRole('PLAYER')")
+    public ResponseEntity<List<BookingDto>> bulkCreateBookings(BulkCreateBookingRequest request) {
+        UserPrincipal principal = getCurrentPrincipal();
+        log.info("BookingController.bulkCreateBookings() called - userId={}, courtId={}, date={}, count={}",
+                principal.getId(), request.getCourtId(), request.getDate(),
+                request.getStartTimes() == null ? 0 : request.getStartTimes().size());
+        List<BookingDto> dtos = bookingService.bulkCreateBookings(principal.getId(), request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(dtos);
+    }
+
+    @Override
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<BookingDto> rejectBooking(Long id) {
         UserPrincipal principal = getCurrentPrincipal();

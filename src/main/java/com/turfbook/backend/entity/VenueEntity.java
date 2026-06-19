@@ -77,13 +77,12 @@ public class VenueEntity {
     @Builder.Default
     private VenueStatus status = VenueStatus.PENDING;
 
-    @Column(nullable = false)
-    @Builder.Default
-    private double rating = 0.0;
+    @Column(name = "rating")
+    private Double ratingAverage = null;
 
     @Column(name = "review_count", nullable = false)
     @Builder.Default
-    private int reviewCount = 0;
+    private long ratingCount = 0L;
 
     @Column(name = "cover_photo", length = 500)
     private String coverPhoto;

@@ -159,6 +159,8 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
     @Query("SELECT COUNT(DISTINCT b.player) FROM BookingEntity b WHERE b.venue.owner = :owner")
     long countDistinctPlayersByOwner(@Param("owner") UserEntity owner);
 
+    boolean existsByPlayerAndVenueAndStatus(UserEntity player, VenueEntity venue, BookingEntity.BookingStatus status);
+
     // Group booking lookup
     List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
 

@@ -252,11 +252,15 @@ components:
           type: string
         status:
           type: string
-        rating:
+        ratingAverage:
           type: number
           format: double
-        reviewCount:
+          nullable: true
+          description: Average star rating (1–5). null when no reviews exist yet.
+        ratingCount:
           type: integer
+          format: int64
+          description: Total number of reviews.
         pricePerHour:
           type: integer
           description: Venue-level default price per hour (₹)
@@ -314,11 +318,15 @@ components:
           type: string
         status:
           type: string
-        rating:
+        ratingAverage:
           type: number
           format: double
-        reviewCount:
+          nullable: true
+          description: Average star rating (1–5). null when no reviews exist yet.
+        ratingCount:
           type: integer
+          format: int64
+          description: Total number of reviews.
         pricePerHour:
           type: integer
           description: Venue-level default price per hour (₹)
@@ -828,42 +836,38 @@ components:
     # ─── Review ─────────────────────────────────────────────────────────────
     ReviewDto:
       type: object
+      required: [id, venueId, authorName, rating, comment, createdAt, isOwn]
       properties:
         id:
-          type: integer
-          format: int64
-        bookingId:
           type: integer
           format: int64
         venueId:
           type: integer
           format: int64
-        playerId:
-          type: integer
-          format: int64
-        playerName:
+        authorName:
           type: string
         rating:
           type: integer
+          minimum: 1
+          maximum: 5
         comment:
-          type: string
-        cleanliness:
-          type: integer
-        ground:
-          type: integer
-        staff:
-          type: integer
-        ownerReply:
           type: string
         createdAt:
           type: string
-          format: date
+          format: date-time
+        isOwn:
+          type: boolean
+          description: True when the authenticated caller authored this review.
+        venueName:
+          type: string
+          nullable: true
+          description: Populated in owner-scoped responses only.
 
     CreateReviewRequest:
       type: object
-      required: [bookingId, rating, comment, cleanliness, ground, staff]
+      required: [venueId, rating, comment]
       properties:
-        bookingId:
+        venueId:
           type: integer
           format: int64
         rating:
@@ -872,18 +876,21 @@ components:
           maximum: 5
         comment:
           type: string
-        cleanliness:
+          minLength: 1
+          maxLength: 1000
+
+    UpdateReviewRequest:
+      type: object
+      required: [rating, comment]
+      properties:
+        rating:
           type: integer
           minimum: 1
           maximum: 5
-        ground:
-          type: integer
-          minimum: 1
-          maximum: 5
-        staff:
-          type: integer
-          minimum: 1
-          maximum: 5
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 1000
 
     ReviewPage:
       type: object
@@ -2349,7 +2356,7 @@ paths:
   /api/v1/venues/{venueId}/reviews:
     get:
       tags: [Reviews]
-      summary: List reviews for a venue
+      summary: List reviews for a venue (public; isOwn computed when authenticated)
       operationId: listVenueReviews
       security: []
       parameters:
@@ -2376,12 +2383,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReviewPage'
-
-  /api/v1/reviews:
     post:
       tags: [Reviews]
-      summary: Submit review (Player)
-      operationId: createReview
+      summary: Create a review for a venue (Player, eligible only)
+      operationId: createVenueReview
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
       requestBody:
         required: true
         content:
@@ -2390,16 +2402,102 @@ paths:
               $ref: '#/components/schemas/CreateReviewRequest'
       responses:
         '201':
-          description: Created review
+          description: Review created
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReviewDto'
+        '403':
+          description: Not eligible (no completed booking at this venue)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Already reviewed (use PUT to edit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/venues/{venueId}/reviews/me:
+    get:
+      tags: [Reviews]
+      summary: Get the caller's own review for a venue (Player)
+      operationId: getMyVenueReview
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The caller's review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewDto'
+        '204':
+          description: No review submitted yet for this venue
+
+  /api/v1/reviews/{reviewId}:
+    put:
+      tags: [Reviews]
+      summary: Update own review (Player, author only)
+      operationId: updateReview
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewRequest'
+      responses:
+        '200':
+          description: Updated review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewDto'
+        '403':
+          description: Not the author
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Reviews]
+      summary: Delete own review (Player, author only)
+      operationId: deleteReview
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+        '403':
+          description: Not the author
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/owner/reviews:
     get:
       tags: [Reviews]
-      summary: List owner venue reviews (Owner)
+      summary: Aggregate reviews across all owner venues (Owner)
       operationId: listOwnerReviews
       parameters:
         - name: page
@@ -2414,7 +2512,7 @@ paths:
             default: 20
       responses:
         '200':
-          description: Page of reviews
+          description: Page of reviews with venueName populated
           content:
             application/json:
               schema:

@@ -3,10 +3,13 @@ package com.turfbook.backend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "reviews")
+@Table(
+    name = "reviews",
+    uniqueConstraints = @UniqueConstraint(columnNames = {"venue_id", "player_id"})
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -18,10 +21,6 @@ public class ReviewEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "booking_id", nullable = false, unique = true)
-    private BookingEntity booking;
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "venue_id", nullable = false)
     private VenueEntity venue;
@@ -30,8 +29,8 @@ public class ReviewEntity {
     @JoinColumn(name = "player_id", nullable = false)
     private UserEntity player;
 
-    @Column(name = "player_name", nullable = false, length = 100)
-    private String playerName;
+    @Column(name = "author_name", nullable = false, length = 100)
+    private String authorName;
 
     @Column(nullable = false)
     private int rating;
@@ -39,19 +38,10 @@ public class ReviewEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String comment;
 
-    @Column(nullable = false)
-    private int cleanliness;
-
-    @Column(nullable = false)
-    private int ground;
-
-    @Column(nullable = false)
-    private int staff;
-
-    @Column(name = "owner_reply", columnDefinition = "TEXT")
-    private String ownerReply;
-
     @Column(name = "created_at", nullable = false)
     @Builder.Default
-    private LocalDate createdAt = LocalDate.now();
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

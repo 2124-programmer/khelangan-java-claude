@@ -558,7 +558,7 @@ public class BookingServiceImpl implements BookingService {
         boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId());
         SlotEntity.SlotStatus targetStatus = autoAccept
                 ? SlotEntity.SlotStatus.BOOKED : SlotEntity.SlotStatus.HELD;
-        LocalDate date = LocalDate.parse(request.getDate());
+        LocalDate date = request.getDate();
         String groupId = UUID.randomUUID().toString();
 
         List<BookingDto> results = new ArrayList<>();
