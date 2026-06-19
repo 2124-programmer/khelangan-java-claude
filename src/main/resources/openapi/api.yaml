@@ -314,8 +314,7 @@ components:
           type: string
         contactPhone:
           type: string
-        contactEmail:
-          type: string
+          description: Venue business phone — safe to show to players
         status:
           type: string
         ratingAverage:
