@@ -130,6 +130,17 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             @Param("to") LocalDate to
     );
 
+    // Dashboard summary: bookings with status IN :statuses and slot date in [:from, :to]
+    // Used for "Done" card which mirrors the Completed tab (COMPLETED + CHECKED_IN)
+    @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
+           "AND b.status IN :statuses AND b.date >= :from AND b.date <= :to")
+    long countByOwnerAndStatusInAndSlotDateBetween(
+            @Param("owner") UserEntity owner,
+            @Param("statuses") Collection<BookingEntity.BookingStatus> statuses,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to
+    );
+
     // Dashboard summary: cancelled/rejected bookings created within the window
     @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
            "AND b.status IN :statuses AND b.createdAt >= :from")

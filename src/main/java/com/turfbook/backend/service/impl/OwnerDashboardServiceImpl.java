@@ -78,8 +78,13 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
         long upcoming = bookingRepository.countByOwnerAndDateAfterAndStatus(
                 owner, todayIst, BookingEntity.BookingStatus.CONFIRMED);
 
-        long completedLast30 = bookingRepository.countByOwnerAndStatusAndSlotDateBetween(
-                owner, BookingEntity.BookingStatus.COMPLETED, todayIst.minusDays(30), todayIst);
+        // Mirror the Completed tab: COMPLETED + CHECKED_IN
+        List<BookingEntity.BookingStatus> doneStatuses = List.of(
+                BookingEntity.BookingStatus.COMPLETED,
+                BookingEntity.BookingStatus.CHECKED_IN
+        );
+        long completedLast30 = bookingRepository.countByOwnerAndStatusInAndSlotDateBetween(
+                owner, doneStatuses, todayIst.minusDays(30), todayIst);
 
         List<BookingEntity.BookingStatus> cancelStatuses = List.of(
                 BookingEntity.BookingStatus.CANCELLED,
