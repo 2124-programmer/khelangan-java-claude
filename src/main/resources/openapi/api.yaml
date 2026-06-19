@@ -764,6 +764,33 @@ components:
           type: string
           default: CARD
 
+    BulkCreateBookingRequest:
+      type: object
+      required: [venueId, courtId, date, startTimes, sport]
+      properties:
+        venueId:
+          type: integer
+          format: int64
+        courtId:
+          type: integer
+          format: int64
+        date:
+          type: string
+          format: date
+          description: Booking date (YYYY-MM-DD)
+        startTimes:
+          type: array
+          description: Start times of each requested slot (HH:mm). Must be contiguous.
+          items:
+            type: string
+          minItems: 1
+        sport:
+          type: string
+        couponCode:
+          type: string
+        paymentMethod:
+          type: string
+
     BookingPage:
       type: object
       properties:
@@ -2259,6 +2286,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BookingDto'
+
+  /api/v1/bookings/bulk:
+    post:
+      tags: [Bookings]
+      summary: Bulk-create bookings for contiguous slots (Player)
+      operationId: bulkCreateBookings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCreateBookingRequest'
+      responses:
+        '201':
+          description: Created bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingDto'
+        '409':
+          description: One or more requested slots are no longer available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   # ─── Owner Settings ───────────────────────────────────────────────────────
   /api/v1/owner/settings:
