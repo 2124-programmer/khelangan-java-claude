@@ -749,6 +749,10 @@ components:
           type: string
           nullable: true
           description: Venue contact phone (player-scoped responses)
+        cancellationReason:
+          type: string
+          nullable: true
+          description: Who or what triggered the cancellation — PLAYER, OWNER, TIME_OVER
 
     CreateBookingRequest:
       type: object

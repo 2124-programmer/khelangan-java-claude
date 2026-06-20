@@ -25,6 +25,10 @@ public class BookingEntity {
         PENDING, SUCCESS, FAILED, REFUNDED
     }
 
+    public enum CancellationReason {
+        PLAYER, OWNER, TIME_OVER
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -92,6 +96,10 @@ public class BookingEntity {
 
     @Column(name = "group_id", length = 36)
     private String groupId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancellation_reason", length = 20)
+    private CancellationReason cancellationReason;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

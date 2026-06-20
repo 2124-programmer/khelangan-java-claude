@@ -10,7 +10,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -25,6 +27,33 @@ public class BookingExpiryTask {
 
     private final BookingRepository bookingRepository;
     private final SlotRepository slotRepository;
+
+    @Scheduled(fixedRate = 900_000) // runs every 15 minutes
+    @Transactional
+    public void cancelPastPendingBookings() {
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
+        List<BookingEntity> past = bookingRepository.findPastPendingBookings(today, now);
+        if (past.isEmpty()) return;
+
+        log.info("Auto-cancelling {} PENDING booking(s) whose slot has ended", past.size());
+        for (BookingEntity booking : past) {
+            try {
+                booking.setStatus(BookingEntity.BookingStatus.CANCELLED);
+                booking.setPaymentStatus(BookingEntity.PaymentStatus.PENDING);
+                booking.setCancellationReason(BookingEntity.CancellationReason.TIME_OVER);
+                SlotEntity slot = booking.getSlot();
+                if (slot != null) {
+                    slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+                    slotRepository.save(slot);
+                }
+                bookingRepository.save(booking);
+                log.info("Booking {} auto-cancelled (time over) — slot ended {} {}", booking.getId(), booking.getDate(), booking.getEndTime());
+            } catch (Exception e) {
+                log.error("Failed to auto-cancel booking {} — skipping", booking.getId(), e);
+            }
+        }
+    }
 
     @Scheduled(fixedRate = 3_600_000) // runs every hour
     @Transactional

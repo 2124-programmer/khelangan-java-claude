@@ -65,11 +65,19 @@ public class BookingServiceImpl implements BookingService {
                 List.of(BookingEntity.BookingStatus.COMPLETED, BookingEntity.BookingStatus.CHECKED_IN);
         final boolean isCompletedQuery = "COMPLETED".equalsIgnoreCase(status);
 
+        // "Cancelled" tab surfaces CANCELLED + REJECTED + EXPIRED for players
+        final List<BookingEntity.BookingStatus> cancelledStatuses =
+                List.of(BookingEntity.BookingStatus.CANCELLED, BookingEntity.BookingStatus.REJECTED, BookingEntity.BookingStatus.EXPIRED);
+        final boolean isCancelledQuery = "CANCELLED".equalsIgnoreCase(status);
+
         switch (currentUser.getRole()) {
             case PLAYER -> {
                 if (isCompletedQuery) {
                     entityPage = bookingRepository.findByPlayerAndStatusInOrderByCreatedAtDesc(
                             currentUser, completedStatuses, pageable);
+                } else if (isCancelledQuery) {
+                    entityPage = bookingRepository.findByPlayerAndStatusInOrderByCreatedAtDesc(
+                            currentUser, cancelledStatuses, pageable);
                 } else if (bookingStatus != null) {
                     entityPage = bookingRepository.findByPlayerAndStatusOrderByCreatedAtDesc(
                             currentUser, bookingStatus, pageable);
@@ -329,6 +337,7 @@ public class BookingServiceImpl implements BookingService {
         }
 
         booking.setStatus(BookingEntity.BookingStatus.CANCELLED);
+        booking.setCancellationReason(BookingEntity.CancellationReason.PLAYER);
 
         SlotEntity slot = booking.getSlot();
         slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
@@ -408,6 +417,7 @@ public class BookingServiceImpl implements BookingService {
             }
 
             booking.setStatus(BookingEntity.BookingStatus.CANCELLED);
+            booking.setCancellationReason(BookingEntity.CancellationReason.PLAYER);
             SlotEntity slot = booking.getSlot();
             if (slot != null) {
                 slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
@@ -515,6 +525,7 @@ public class BookingServiceImpl implements BookingService {
 
         booking.setStatus(BookingEntity.BookingStatus.REJECTED);
         booking.setPaymentStatus(BookingEntity.PaymentStatus.FAILED);
+        booking.setCancellationReason(BookingEntity.CancellationReason.OWNER);
 
         SlotEntity slot = booking.getSlot();
         slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
@@ -725,6 +736,7 @@ public class BookingServiceImpl implements BookingService {
             if (booking.getStatus() != BookingEntity.BookingStatus.PENDING) continue;
             booking.setStatus(BookingEntity.BookingStatus.REJECTED);
             booking.setPaymentStatus(BookingEntity.PaymentStatus.FAILED);
+            booking.setCancellationReason(BookingEntity.CancellationReason.OWNER);
             SlotEntity slot = booking.getSlot();
             if (slot != null) {
                 slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);

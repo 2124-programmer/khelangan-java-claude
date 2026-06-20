@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -194,4 +195,9 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
     // LEFT JOIN FETCH avoids lazy proxy initialization for slots that may have been deleted.
     @Query("SELECT b FROM BookingEntity b LEFT JOIN FETCH b.slot WHERE b.status = 'PENDING' AND b.createdAt < :expiredBefore")
     List<BookingEntity> findExpiredPendingBookings(@Param("expiredBefore") LocalDateTime expiredBefore);
+
+    // PENDING bookings whose slot end time has already passed — auto-cancelled as TIME_OVER.
+    @Query("SELECT b FROM BookingEntity b LEFT JOIN FETCH b.slot WHERE b.status = 'PENDING' " +
+           "AND (b.date < :today OR (b.date = :today AND b.endTime <= :nowTime))")
+    List<BookingEntity> findPastPendingBookings(@Param("today") LocalDate today, @Param("nowTime") LocalTime nowTime);
 }
