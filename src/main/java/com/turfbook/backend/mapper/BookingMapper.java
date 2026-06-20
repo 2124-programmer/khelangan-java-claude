@@ -23,6 +23,7 @@ public interface BookingMapper {
     @Mapping(target = "endTime", expression = "java(entity.getEndTime().toString())")
     @Mapping(target = "hasReview", expression = "java(entity.isHasReview())")
     @Mapping(target = "createdAt", expression = "java(entity.getCreatedAt() != null ? entity.getCreatedAt().atOffset(java.time.ZoneOffset.UTC) : null)")
+    @Mapping(target = "updatedAt", expression = "java(entity.getUpdatedAt() != null ? entity.getUpdatedAt().atOffset(java.time.ZoneOffset.UTC) : null)")
     @Mapping(target = "groupId", source = "entity.groupId")
     @Mapping(target = "cancellationReason", expression = "java(entity.getCancellationReason() != null ? entity.getCancellationReason().name() : null)")
     BookingDto toDto(BookingEntity entity);

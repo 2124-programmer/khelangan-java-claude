@@ -738,6 +738,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the last status change (accepted, checked-in, cancelled, etc.)
         groupId:
           type: string
           nullable: true
