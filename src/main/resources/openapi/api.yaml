@@ -293,6 +293,10 @@ components:
           type: array
           items:
             type: string
+        courtCount:
+          type: integer
+          format: int64
+          description: Number of courts belonging to this venue (owner list only)
 
     VenueDetailDto:
       type: object

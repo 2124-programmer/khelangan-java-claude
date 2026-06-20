@@ -102,6 +102,16 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             Collection<BookingEntity.BookingStatus> statuses
     );
 
+    // Dashboard summary: today's slot rows (full entities) for the owner
+    @Query("SELECT b FROM BookingEntity b JOIN FETCH b.court JOIN FETCH b.player " +
+           "WHERE b.venue.owner = :owner AND b.date = :date AND b.status IN :statuses " +
+           "ORDER BY b.startTime ASC")
+    List<BookingEntity> findTodaySlotsForDashboard(
+            @Param("owner") UserEntity owner,
+            @Param("date") LocalDate date,
+            @Param("statuses") Collection<BookingEntity.BookingStatus> statuses
+    );
+
     // Dashboard summary: bookings whose slot date = given date and status in the provided set
     @Query("SELECT COUNT(b) FROM BookingEntity b WHERE b.venue.owner = :owner " +
            "AND b.date = :date AND b.status IN :statuses")

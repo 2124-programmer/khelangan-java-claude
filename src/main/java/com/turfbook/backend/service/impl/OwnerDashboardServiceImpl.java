@@ -2,6 +2,7 @@ package com.turfbook.backend.service.impl;
 
 import com.turfbook.backend.dto.DashboardBookingCountsDto;
 import com.turfbook.backend.dto.DashboardEarningsDto;
+import com.turfbook.backend.dto.DashboardSlotDto;
 import com.turfbook.backend.dto.DashboardStatsDto;
 import com.turfbook.backend.dto.OwnerDashboardSummaryDto;
 import com.turfbook.backend.entity.BookingEntity;
@@ -98,6 +99,26 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
         long venueCount     = venueRepository.countByOwner(owner);
         long courtCount     = courtRepository.countByVenueOwner(owner);
 
+        // ── Today's slot rows (confirmed + checked_in + completed) ──
+        List<BookingEntity.BookingStatus> slotStatuses = List.of(
+                BookingEntity.BookingStatus.CONFIRMED,
+                BookingEntity.BookingStatus.CHECKED_IN,
+                BookingEntity.BookingStatus.COMPLETED
+        );
+        List<DashboardSlotDto> todaySlots = bookingRepository
+                .findTodaySlotsForDashboard(owner, todayIst, slotStatuses)
+                .stream()
+                .map(b -> DashboardSlotDto.builder()
+                        .id(b.getId())
+                        .courtName(b.getCourt().getName())
+                        .startTime(b.getStartTime().toString())
+                        .endTime(b.getEndTime().toString())
+                        .playerName(b.getPlayer().getName())
+                        .sport(b.getSport())
+                        .status(b.getStatus().name().toLowerCase())
+                        .build())
+                .toList();
+
         return OwnerDashboardSummaryDto.builder()
                 .earnings(DashboardEarningsDto.builder()
                         .todayAmount(todayAmount)
@@ -118,6 +139,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                         .venueCount(venueCount)
                         .courtCount(courtCount)
                         .build())
+                .todaySlots(todaySlots)
                 .build();
     }
 }
