@@ -14,9 +14,13 @@ public interface VenueService {
 
     VenueDetailDto updateVenueStatus(Long id, VenueStatusRequest request);
 
+    VenueDetailDto submitVenueForApproval(Long venueId, Long ownerId, Long planId);
+
     VenueSummaryPage listOwnerVenues(Long ownerId, int page, int size);
 
     VenueSummaryPage adminListVenues(int page, int size, String status);
+
+    AdminVenueDetailDto adminGetVenue(Long id);
 
     // Courts
     java.util.List<CourtDto> listCourts(Long venueId);

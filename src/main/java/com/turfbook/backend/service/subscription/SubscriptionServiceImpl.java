@@ -14,6 +14,7 @@ import com.turfbook.backend.entity.ActivationSource;
 import com.turfbook.backend.entity.BillingCycle;
 import com.turfbook.backend.entity.FeatureCode;
 import com.turfbook.backend.entity.NotificationEntity;
+import com.turfbook.backend.entity.PlanCode;
 import com.turfbook.backend.entity.SubscriptionChangeRequestEntity;
 import com.turfbook.backend.entity.SubscriptionEntity;
 import com.turfbook.backend.entity.SubscriptionPaymentEntity;
@@ -23,6 +24,7 @@ import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.entity.VenueEntity;
 import com.turfbook.backend.exception.BadRequestException;
 import com.turfbook.backend.exception.ConflictException;
+import com.turfbook.backend.exception.CourtLimitExceededException;
 import com.turfbook.backend.exception.ForbiddenException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.repository.CourtRepository;
@@ -455,14 +457,18 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     public void assertCanAddCourt(Long venueId) {
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
-        SubscriptionEntity sub = currentEntity(venue)
-                .orElseThrow(() -> new ConflictException(
-                        "This venue has no active subscription. Activate a plan to add courts."));
-        long courts = courtRepository.countByVenue(venue);
-        if (courts >= sub.getMaxCourts()) {
-            throw new ConflictException(String.format(
-                    "Court limit reached for the %s plan (%d courts). Upgrade to add more.",
-                    sub.getPlanName(), sub.getMaxCourts()));
+        // Pre-go-live (no subscription yet) venues build courts freely — the submit-for-approval
+        // gate sizes the tier by court count. Enforce the plan's maxCourts only once a subscription
+        // (trial or paid) exists.
+        Optional<SubscriptionEntity> subOpt = currentEntity(venue);
+        if (subOpt.isEmpty()) return;
+        SubscriptionEntity sub = subOpt.get();
+        int current = (int) courtRepository.countByVenue(venue);
+        if (current >= sub.getMaxCourts()) {
+            throw new CourtLimitExceededException(
+                    String.format("Your %s plan allows %d courts. Upgrade to add more.",
+                            sub.getPlanName(), sub.getMaxCourts()),
+                    sub.getPlanName(), sub.getMaxCourts(), current);
         }
     }
 
@@ -470,6 +476,41 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     @Transactional
     public void recomputeVenueLiveFlag(Long venueId) {
         venueRepository.findById(venueId).ifPresent(this::recomputeVenueLive);
+    }
+
+    @Override
+    @Transactional
+    public void startTrialForApprovedVenue(Long venueId) {
+        VenueEntity venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
+        // Idempotent: if a current subscription already exists (e.g. re-approval after a send-back
+        // round-trip, or a migration comp trial), just refresh the live flag and return.
+        if (currentEntity(venue).isPresent()) {
+            recomputeVenueLive(venue);
+            return;
+        }
+        PlanCode tier = venue.getIntendedPlanCode() != null ? venue.getIntendedPlanCode() : PlanCode.STARTER;
+        SubscriptionPlanEntity plan = planRepository.findByCode(tier)
+                .or(() -> planRepository.findByCode(PlanCode.STARTER))
+                .orElseThrow(() -> new ResourceNotFoundException("SubscriptionPlan", "code", tier));
+
+        SubscriptionEntity sub = SubscriptionEntity.builder()
+                .owner(venue.getOwner())
+                .venue(venue)
+                .plan(plan)
+                .billingCycle(BillingCycle.MONTHLY)
+                .currency(plan.getCurrency())
+                .activationSource(ActivationSource.ADMIN_MANUAL)
+                .build();
+        applySnapshotAndActivate(sub, plan, BillingCycle.MONTHLY, true); // trial
+        subscriptionRepository.save(sub);
+        recomputeVenueLive(venue);
+        notifyOwner(venue.getOwner(), venue, String.format(
+                "Your venue '%s' is approved and live on a %d-day free trial of %s. "
+                        + "Activate a paid plan before the trial ends to stay live.",
+                venue.getName(), plan.getTrialDays(), plan.getName()));
+        log.info("Auto-started {}-day trial (plan {}) for approved venue {}",
+                plan.getTrialDays(), plan.getCode(), venueId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -513,6 +554,9 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         sub.setPrice(cycle == BillingCycle.ANNUAL ? plan.getPriceAnnual() : plan.getPriceMonthly());
         sub.setCurrency(plan.getCurrency());
         sub.setFeatures(new ArrayList<>(plan.getFeatures()));
+        // Every (re)activation/edit/renew gives the subscription a fresh period, so re-arm the
+        // expiry reminders (7/3/1) — the notification job will start escalating again from scratch.
+        sub.setExpiryNotifiedThreshold(null);
     }
 
     /** Recompute the venue's denormalized live flag + placement weight from its current sub. */

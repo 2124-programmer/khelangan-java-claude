@@ -37,11 +37,20 @@ public interface SubscriptionGate {
     int photoLimitFor(Long venueId);
 
     /**
-     * Asserts a new court may be added: requires a live-gating subscription and that
-     * the current court count is below the plan's {@code maxCourts}. Throws 409 otherwise.
+     * Asserts a new court may be added. Venues with no subscription yet (pre-go-live DRAFT) may add
+     * courts freely; once a subscription exists, the current court count must be below the plan's
+     * {@code maxCourts} — otherwise a {@link com.turfbook.backend.exception.CourtLimitExceededException}
+     * (409, with allowed/current details) is thrown.
      */
     void assertCanAddCourt(Long venueId);
 
     /** Recompute and persist the venue's denormalized live flag, placement weight, and featured badge. */
     void recomputeVenueLiveFlag(Long venueId);
+
+    /**
+     * Auto-start a 30-day trial when a venue is approved. Resolves the tier from the venue's
+     * intended plan (or Starter by default), creates a TRIALING subscription, and refreshes the
+     * live flag. Idempotent: no-ops (only refreshes the flag) if a current subscription exists.
+     */
+    void startTrialForApprovedVenue(Long venueId);
 }

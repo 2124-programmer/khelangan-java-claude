@@ -59,6 +59,16 @@ public class VenueController implements VenuesApi {
 
     @Override
     @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<VenueDetailDto> submitVenue(Long venueId, SubmitVenueRequest request) {
+        UserPrincipal principal = getPrincipal();
+        Long planId = request != null ? request.getPlanId() : null;
+        log.info("VenueController.submitVenue() called - venueId={}, ownerId={}, planId={}",
+                venueId, principal.getId(), planId);
+        return ResponseEntity.ok(venueService.submitVenueForApproval(venueId, principal.getId(), planId));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<VenueSummaryPage> listOwnerVenues(Integer page, Integer size) {
         UserPrincipal principal = getPrincipal();
         log.info("VenueController.listOwnerVenues() called - ownerId={}", principal.getId());

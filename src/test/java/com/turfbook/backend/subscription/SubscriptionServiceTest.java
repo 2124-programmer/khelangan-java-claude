@@ -193,7 +193,7 @@ class SubscriptionServiceTest {
 
         assertThatThrownBy(() -> subscriptionGate.assertCanAddCourt(venue.getId()))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Court limit reached");
+                .hasMessageContaining("Upgrade to add more");
     }
 
     // ── Scenario 5b: downgrade below current court count is rejected ──

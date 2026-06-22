@@ -96,6 +96,14 @@ public class SubscriptionEntity {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    /**
+     * The smallest expiry-reminder threshold (in days, e.g. 7/3/1) already notified for the current
+     * period. Lets the expiry-notification job stay idempotent (never re-notify the same threshold)
+     * and only escalate as the deadline nears. Reset to null whenever a fresh period starts.
+     */
+    @Column(name = "expiry_notified_threshold")
+    private Integer expiryNotifiedThreshold;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

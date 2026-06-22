@@ -300,6 +300,35 @@ components:
         featured:
           type: boolean
           description: True when the venue's active plan grants the featured badge
+        createdAt:
+          type: string
+          format: date-time
+          description: When the venue was submitted/registered (used for submission age and oldest-first ordering)
+        subscription:
+          $ref: '#/components/schemas/VenueSubscriptionSummary'
+
+    VenueSubscriptionSummary:
+      type: object
+      description: Compact plan + remaining-days data for the owner status badge (server-computed, IST).
+      properties:
+        planCode:
+          type: string
+        planName:
+          type: string
+        status:
+          type: string
+          description: TRIALING, ACTIVE, PAST_DUE, EXPIRED, CANCELED, or VOIDED
+        effectiveEnd:
+          type: string
+          format: date-time
+          nullable: true
+          description: trialEnd when trialing, else periodEnd.
+        remainingDays:
+          type: integer
+          description: Whole days from now (IST) until effectiveEnd; 0 when past.
+        expiringSoon:
+          type: boolean
+          description: True when remainingDays is at/below the soon threshold (7).
 
     VenueDetailDto:
       type: object
@@ -376,6 +405,13 @@ components:
         createdAt:
           type: string
           format: date-time
+        approvalComments:
+          type: array
+          description: >-
+            Approval thread (submit/changes-requested/reject/resubmit/approve).
+            Populated only for the venue's owner or an ADMIN; empty for public/player calls.
+          items:
+            $ref: '#/components/schemas/VenueApprovalComment'
 
     CreateVenueRequest:
       type: object
@@ -507,9 +543,91 @@ components:
       properties:
         status:
           type: string
-          enum: [PENDING, LIVE, REJECTED, SUSPENDED]
+          enum: [DRAFT, PENDING, LIVE, REJECTED, SUSPENDED, CHANGES_REQUESTED]
         rejectionReason:
           type: string
+          description: >-
+            Owner-facing message. Required when REJECTED (why) or CHANGES_REQUESTED
+            (what to fix); recorded in the venue's approval comment history.
+
+    SubmitVenueRequest:
+      type: object
+      description: Optional body for submit-for-approval. planId is required only when the venue has >2 courts.
+      properties:
+        planId:
+          type: integer
+          format: int64
+          description: The qualifying tier (plan.maxCourts ≥ court count) for venues over the free threshold.
+
+    AdminOwnerDto:
+      type: object
+      description: Owner contact + account context, ADMIN-scoped (never returned on public routes).
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        registeredOn:
+          type: string
+          format: date-time
+          description: When the owner's account was created.
+
+    OwnerVenueHistoryDto:
+      type: object
+      description: Aggregate counts of the owner's venues, so the admin can gauge trust.
+      properties:
+        totalVenues:
+          type: integer
+          format: int64
+        liveVenues:
+          type: integer
+          format: int64
+
+    VenueApprovalComment:
+      type: object
+      description: One entry in a venue's approval thread (submit / changes-requested / reject / resubmit / approve).
+      properties:
+        id:
+          type: integer
+          format: int64
+        action:
+          type: string
+          description: SUBMITTED, CHANGES_REQUESTED, REJECTED, RESUBMITTED, or APPROVED
+        authorRole:
+          type: string
+          description: ADMIN or OWNER
+        comment:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AdminVenueDetailDto:
+      type: object
+      description: >-
+        Full venue listing (same data players see) plus ADMIN-only owner context.
+        Returned by GET /api/v1/admin/venues/{id} for venues in any status.
+      properties:
+        venue:
+          $ref: '#/components/schemas/VenueDetailDto'
+        owner:
+          $ref: '#/components/schemas/AdminOwnerDto'
+        ownerHistory:
+          $ref: '#/components/schemas/OwnerVenueHistoryDto'
+        intendedPlanCode:
+          type: string
+          nullable: true
+          description: Tier the owner committed to at submission (for >2-court venues); null for free ≤2-court venues.
+        commentHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueApprovalComment'
 
     VenueSummaryPage:
       type: object
@@ -2490,6 +2608,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VenueSummaryPage'
+
+  /api/v1/admin/venues/{id}:
+    get:
+      tags: [Admin]
+      summary: Get full venue detail with owner context (Admin)
+      description: >-
+        ADMIN-scoped full venue detail for a venue in ANY status (incl. PENDING/DRAFT/REJECTED),
+        plus owner contact and venue history. Use this to review a pending venue before approving.
+      operationId: adminGetVenue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Venue detail with admin context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminVenueDetailDto'
+        '404':
+          description: Not found
+
+  /api/v1/owner/venues/{venueId}/submit:
+    post:
+      tags: [Venues]
+      summary: Submit (or resubmit) a venue for approval (Owner)
+      description: >-
+        Moves a DRAFT or CHANGES_REQUESTED venue into PENDING. Requires at least one court.
+        Venues with ≤2 courts submit free (Starter tier defaulted). Venues with >2 courts must
+        pass a `planId` whose plan.maxCourts ≥ court count (422 otherwise); that tier is stored
+        as the venue's intended plan and used for the auto-trial on approval.
+      operationId: submitVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitVenueRequest'
+      responses:
+        '200':
+          description: Venue submitted (now PENDING)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetailDto'
+        '422':
+          description: Court count exceeds the free threshold and no qualifying tier was selected
 
   # ─── Courts ───────────────────────────────────────────────────────────────
   /api/v1/venues/{venueId}/courts:

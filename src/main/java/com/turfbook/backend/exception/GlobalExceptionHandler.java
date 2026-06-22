@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -24,6 +26,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex,
                                                          HttpServletRequest request) {
         return buildResponse(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(CourtLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleCourtLimit(CourtLimitExceededException ex,
+                                                          HttpServletRequest request) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("allowed", ex.getAllowed());
+        details.put("current", ex.getCurrent());
+        if (ex.getPlanName() != null) details.put("planName", ex.getPlanName());
+        ErrorResponse body = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error("COURT_LIMIT_EXCEEDED")
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .details(details)
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(ConflictException.class)

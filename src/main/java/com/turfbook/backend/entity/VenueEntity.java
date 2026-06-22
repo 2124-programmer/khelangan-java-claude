@@ -21,7 +21,7 @@ import java.util.Set;
 public class VenueEntity {
 
     public enum VenueStatus {
-        PENDING, LIVE, REJECTED, SUSPENDED
+        DRAFT, PENDING, LIVE, REJECTED, SUSPENDED, CHANGES_REQUESTED
     }
 
     @Id
@@ -75,7 +75,15 @@ public class VenueEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private VenueStatus status = VenueStatus.PENDING;
+    private VenueStatus status = VenueStatus.DRAFT;
+
+    /**
+     * Tier the owner committed to at submission for venues over the free court threshold (>2).
+     * Null for free ≤2-court venues (which default to Starter for the auto-trial on approval).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "intended_plan_code", length = 20)
+    private PlanCode intendedPlanCode;
 
     @Column(name = "rating")
     private Double ratingAverage = null;

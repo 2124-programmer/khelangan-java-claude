@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -18,6 +19,9 @@ public class ErrorResponse {
     private String message;
     private String path;
     private List<FieldError> fieldErrors;
+
+    /** Optional machine-readable context (e.g. {"allowed": 6, "current": 6} for a court-limit conflict). */
+    private Map<String, Object> details;
 
     @Data
     @Builder

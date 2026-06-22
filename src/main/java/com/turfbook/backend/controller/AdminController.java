@@ -80,6 +80,12 @@ public class AdminController implements AdminApi {
                 status));
     }
 
+    @Override
+    public ResponseEntity<AdminVenueDetailDto> adminGetVenue(Long id) {
+        log.info("AdminController.adminGetVenue() called - id={}", id);
+        return ResponseEntity.ok(venueService.adminGetVenue(id));
+    }
+
     // ─── Bookings ─────────────────────────────────────────────────────────
 
     @Override

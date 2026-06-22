@@ -2,6 +2,7 @@ package com.turfbook.backend.service.impl;
 
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.*;
+import com.turfbook.backend.exception.BadRequestException;
 import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.ForbiddenException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
@@ -10,14 +11,18 @@ import com.turfbook.backend.mapper.CourtMapper;
 import com.turfbook.backend.mapper.SlotMapper;
 import com.turfbook.backend.mapper.VenueMapper;
 import com.turfbook.backend.repository.*;
+import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.VenueService;
+import com.turfbook.backend.service.subscription.SubscriptionDateCalculator;
 import com.turfbook.backend.service.subscription.SubscriptionGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -25,6 +30,8 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -49,6 +56,15 @@ public class VenueServiceImpl implements VenueService {
     private final SlotMapper slotMapper;
     private final NotificationService notificationService;
     private final SubscriptionGate subscriptionGate;
+    private final VenueApprovalCommentRepository approvalCommentRepository;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
+    private final SubscriptionDateCalculator subscriptionDates;
+
+    /** Venues at/below this court count submit for approval free (Starter tier defaulted). */
+    private static final int FREE_COURT_THRESHOLD = 2;
+
+    /** remainingDays at/below this surfaces the "expiring soon" badge state. */
+    private static final int EXPIRING_SOON_DAYS = 7;
 
     // ─── Venues ────────────────────────────────────────────────────────────
 
@@ -75,7 +91,33 @@ public class VenueServiceImpl implements VenueService {
         log.info("VenueService.getVenue() called - id={}", id);
         VenueEntity venue = venueRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", id));
-        return venueMapper.toDetailDto(venue);
+
+        // Public visibility: only approved (LIVE) venues are visible to anyone. Non-live venues
+        // (DRAFT/PENDING/REJECTED/SUSPENDED) are restricted to the venue's owner and ADMINs, so a
+        // pending/rejected listing — including the owner's contact details — does not leak publicly.
+        // A 404 (rather than 403) avoids letting strangers probe which venue ids exist.
+        boolean privileged = canViewNonLiveVenue(venue);
+        if (venue.getStatus() != VenueEntity.VenueStatus.LIVE && !privileged) {
+            throw new ResourceNotFoundException("Venue", "id", id);
+        }
+        VenueDetailDto dto = venueMapper.toDetailDto(venue);
+        // The approval thread is owner/admin-only context — never exposed to public/player calls.
+        if (privileged) {
+            dto.setApprovalComments(buildCommentDtos(venue));
+        }
+        return dto;
+    }
+
+    /** True when the current principal is the venue's owner or an ADMIN. */
+    private boolean canViewNonLiveVenue(VenueEntity venue) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof UserPrincipal principal)) {
+            return false;
+        }
+        boolean isAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        boolean isOwner = venue.getOwner() != null && venue.getOwner().getId().equals(principal.getId());
+        return isAdmin || isOwner;
     }
 
     @Override
@@ -118,7 +160,8 @@ public class VenueServiceImpl implements VenueService {
                 .photos(request.getPhotos() != null ? request.getPhotos() : new ArrayList<>())
                 .sports(sports)
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
-                .status(VenueEntity.VenueStatus.PENDING)
+                // New venues start as DRAFT: the owner builds courts free, then submits for approval.
+                .status(VenueEntity.VenueStatus.DRAFT)
                 .build();
 
         venue = venueRepository.save(venue);
@@ -212,10 +255,22 @@ public class VenueServiceImpl implements VenueService {
         }
 
         VenueEntity.VenueStatus oldStatus = venue.getStatus();
+
+        if (newStatus == VenueEntity.VenueStatus.REJECTED && !StringUtils.hasText(request.getRejectionReason())) {
+            throw new IllegalArgumentException("A reason is required when rejecting a venue.");
+        }
+        if (newStatus == VenueEntity.VenueStatus.CHANGES_REQUESTED && !StringUtils.hasText(request.getRejectionReason())) {
+            throw new IllegalArgumentException("Comments are required when sending a venue back for changes.");
+        }
+
         venue.setStatus(newStatus);
         venue = venueRepository.save(venue);
 
         if (newStatus == VenueEntity.VenueStatus.LIVE && oldStatus == VenueEntity.VenueStatus.PENDING) {
+            addComment(venue, VenueApprovalCommentEntity.Action.APPROVED,
+                    VenueApprovalCommentEntity.AuthorRole.ADMIN, request.getRejectionReason());
+            // Auto-start the 30-day trial (Starter for ≤2 courts, else the committed tier) → venue goes live.
+            subscriptionGate.startTrialForApprovedVenue(venue.getId());
             notificationService.createNotification(
                     venue.getOwner(),
                     "Venue Approved!",
@@ -223,17 +278,85 @@ public class VenueServiceImpl implements VenueService {
                     NotificationEntity.NotificationType.SYSTEM
             );
         } else if (newStatus == VenueEntity.VenueStatus.REJECTED) {
-            String reason = StringUtils.hasText(request.getRejectionReason())
-                    ? request.getRejectionReason() : "Does not meet our guidelines";
+            String reason = request.getRejectionReason();
+            addComment(venue, VenueApprovalCommentEntity.Action.REJECTED,
+                    VenueApprovalCommentEntity.AuthorRole.ADMIN, reason);
             notificationService.createNotification(
                     venue.getOwner(),
                     "Venue Rejected",
                     String.format("Your venue '%s' was rejected. Reason: %s", venue.getName(), reason),
                     NotificationEntity.NotificationType.SYSTEM
             );
+        } else if (newStatus == VenueEntity.VenueStatus.CHANGES_REQUESTED) {
+            // "Send back for changes" — venue returns to the owner to edit and resubmit.
+            String reason = request.getRejectionReason();
+            addComment(venue, VenueApprovalCommentEntity.Action.CHANGES_REQUESTED,
+                    VenueApprovalCommentEntity.AuthorRole.ADMIN, reason);
+            notificationService.createNotification(
+                    venue.getOwner(),
+                    "Changes Requested",
+                    String.format("Your venue '%s' was sent back for changes: %s "
+                            + "Edit the details and resubmit for approval.", venue.getName(), reason),
+                    NotificationEntity.NotificationType.SYSTEM
+            );
         }
 
-        return venueMapper.toDetailDto(venue);
+        VenueDetailDto dto = venueMapper.toDetailDto(venue);
+        dto.setApprovalComments(buildCommentDtos(venue));
+        return dto;
+    }
+
+    @Override
+    @Transactional
+    public VenueDetailDto submitVenueForApproval(Long venueId, Long ownerId, Long planId) {
+        log.info("VenueService.submitVenueForApproval() called - venueId={}, ownerId={}, planId={}",
+                venueId, ownerId, planId);
+        VenueEntity venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
+        if (!venue.getOwner().getId().equals(ownerId)) {
+            throw new UnauthorizedException("You do not own this venue");
+        }
+        boolean resubmitting = venue.getStatus() == VenueEntity.VenueStatus.CHANGES_REQUESTED;
+        if (venue.getStatus() != VenueEntity.VenueStatus.DRAFT && !resubmitting) {
+            throw new ConflictException(
+                    "Only a draft venue (or one sent back for changes) can be submitted for approval.");
+        }
+
+        int courts = (int) courtRepository.countByVenue(venue);
+        if (courts < 1) {
+            throw new BadRequestException("Add at least one court before submitting for approval.");
+        }
+
+        // Tier gating: ≤ free threshold submits free (Starter defaulted at approval); above it the owner
+        // must commit to a tier whose maxCourts ≥ court count.
+        if (courts > FREE_COURT_THRESHOLD) {
+            if (planId == null) {
+                throw new BadRequestException(String.format(
+                        "This venue has %d courts. Select a plan that supports at least %d courts to submit.",
+                        courts, courts));
+            }
+            SubscriptionPlanEntity plan = subscriptionPlanRepository.findById(planId)
+                    .orElseThrow(() -> new ResourceNotFoundException("SubscriptionPlan", "id", planId));
+            if (plan.getMaxCourts() < courts) {
+                throw new BadRequestException(String.format(
+                        "The %s plan allows %d courts but this venue has %d. Choose a higher tier.",
+                        plan.getName(), plan.getMaxCourts(), courts));
+            }
+            venue.setIntendedPlanCode(plan.getCode());
+        } else {
+            venue.setIntendedPlanCode(null); // free tier — Starter defaulted at approval
+        }
+
+        venue.setStatus(VenueEntity.VenueStatus.PENDING);
+        venue = venueRepository.save(venue);
+        addComment(venue,
+                resubmitting ? VenueApprovalCommentEntity.Action.RESUBMITTED
+                        : VenueApprovalCommentEntity.Action.SUBMITTED,
+                VenueApprovalCommentEntity.AuthorRole.OWNER, null);
+
+        VenueDetailDto dto = venueMapper.toDetailDto(venue);
+        dto.setApprovalComments(buildCommentDtos(venue));
+        return dto;
     }
 
     @Override
@@ -243,7 +366,15 @@ public class VenueServiceImpl implements VenueService {
         UserEntity owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
         Pageable pageable = PageRequest.of(page, size);
-        return toVenueSummaryPage(venueRepository.findByOwner(owner, pageable));
+        Page<VenueEntity> entityPage = venueRepository.findByOwner(owner, pageable);
+        VenueSummaryPage page1 = toVenueSummaryPage(entityPage);
+        // Attach the compact subscription badge to each owner card (no extra round-trip from the client).
+        List<VenueEntity> entities = entityPage.getContent();
+        for (int i = 0; i < entities.size(); i++) {
+            VenueSummaryDto summary = page1.getContent().get(i);
+            summary.setSubscription(buildSubscriptionSummary(entities.get(i).getId()));
+        }
+        return page1;
     }
 
     @Override
@@ -263,6 +394,89 @@ public class VenueServiceImpl implements VenueService {
             entityPage = venueRepository.findAll(pageable);
         }
         return toVenueSummaryPage(entityPage);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminVenueDetailDto adminGetVenue(Long id) {
+        log.info("VenueService.adminGetVenue() called - id={}", id);
+        VenueEntity venue = venueRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", id));
+        UserEntity owner = venue.getOwner();
+
+        AdminOwnerDto ownerDto = new AdminOwnerDto();
+        if (owner != null) {
+            ownerDto.setId(owner.getId());
+            ownerDto.setName(owner.getName());
+            ownerDto.setPhone(owner.getPhone());
+            ownerDto.setEmail(owner.getEmail());
+            ownerDto.setRegisteredOn(owner.getCreatedAt() != null
+                    ? owner.getCreatedAt().atOffset(ZoneOffset.UTC) : null);
+        }
+
+        OwnerVenueHistoryDto history = new OwnerVenueHistoryDto();
+        if (owner != null) {
+            history.setTotalVenues(venueRepository.countByOwner(owner));
+            history.setLiveVenues(venueRepository.countLiveByOwner(owner, VenueEntity.VenueStatus.LIVE));
+        } else {
+            history.setTotalVenues(0L);
+            history.setLiveVenues(0L);
+        }
+
+        AdminVenueDetailDto dto = new AdminVenueDetailDto();
+        dto.setVenue(venueMapper.toDetailDto(venue));
+        dto.setOwner(ownerDto);
+        dto.setOwnerHistory(history);
+        dto.setIntendedPlanCode(venue.getIntendedPlanCode() != null ? venue.getIntendedPlanCode().name() : null);
+        dto.setCommentHistory(buildCommentDtos(venue));
+        return dto;
+    }
+
+    /** Append an approval-thread entry for a venue. */
+    private void addComment(VenueEntity venue, VenueApprovalCommentEntity.Action action,
+                            VenueApprovalCommentEntity.AuthorRole role, String comment) {
+        approvalCommentRepository.save(VenueApprovalCommentEntity.builder()
+                .venue(venue)
+                .action(action)
+                .authorRole(role)
+                .comment(StringUtils.hasText(comment) ? comment : null)
+                .build());
+    }
+
+    /** Map a venue's approval thread (oldest first) to DTOs. */
+    private List<VenueApprovalComment> buildCommentDtos(VenueEntity venue) {
+        return approvalCommentRepository.findByVenueOrderByCreatedAtAsc(venue).stream()
+                .map(c -> {
+                    VenueApprovalComment dto = new VenueApprovalComment();
+                    dto.setId(c.getId());
+                    dto.setAction(c.getAction().name());
+                    dto.setAuthorRole(c.getAuthorRole().name());
+                    dto.setComment(c.getComment());
+                    dto.setCreatedAt(c.getCreatedAt() != null ? c.getCreatedAt().atOffset(ZoneOffset.UTC) : null);
+                    return dto;
+                })
+                .toList();
+    }
+
+    /** Build the compact subscription badge for the owner venues list. Null when no subscription. */
+    private VenueSubscriptionSummary buildSubscriptionSummary(Long venueId) {
+        SubscriptionEntity sub = subscriptionGate.currentSubscription(venueId).orElse(null);
+        if (sub == null) return null;
+        LocalDateTime effectiveEnd = sub.getStatus() == SubscriptionStatus.TRIALING && sub.getTrialEnd() != null
+                ? sub.getTrialEnd() : sub.getPeriodEnd();
+        int remainingDays = 0;
+        if (effectiveEnd != null) {
+            long days = ChronoUnit.DAYS.between(subscriptionDates.now(), effectiveEnd);
+            remainingDays = (int) Math.max(0, days);
+        }
+        VenueSubscriptionSummary s = new VenueSubscriptionSummary();
+        s.setPlanCode(sub.getPlanCode() != null ? sub.getPlanCode().name() : null);
+        s.setPlanName(sub.getPlanName());
+        s.setStatus(sub.getStatus() != null ? sub.getStatus().name() : null);
+        s.setEffectiveEnd(effectiveEnd != null ? effectiveEnd.atOffset(ZoneOffset.UTC) : null);
+        s.setRemainingDays(remainingDays);
+        s.setExpiringSoon(remainingDays <= EXPIRING_SOON_DAYS);
+        return s;
     }
 
     // ─── Courts ────────────────────────────────────────────────────────────

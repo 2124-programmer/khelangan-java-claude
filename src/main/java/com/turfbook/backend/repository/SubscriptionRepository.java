@@ -34,6 +34,9 @@ public interface SubscriptionRepository extends JpaRepository<SubscriptionEntity
     List<SubscriptionEntity> findByStatusInAndPeriodEndBefore(
             List<SubscriptionStatus> statuses, LocalDateTime cutoff);
 
+    /** All rows in the given statuses (used by the expiry-reminder job for live-gating rows). */
+    List<SubscriptionEntity> findByStatusIn(List<SubscriptionStatus> statuses);
+
     /** PAST_DUE rows whose grace window (periodEnd + grace) has elapsed. */
     List<SubscriptionEntity> findByStatus(SubscriptionStatus status);
 
