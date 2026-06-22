@@ -16,6 +16,7 @@ public interface VenueMapper {
     @Mapping(target = "sports", source = "sports")
     @Mapping(target = "amenities", source = "amenities")
     @Mapping(target = "isActive", expression = "java(entity.isActive())")
+    @Mapping(target = "featured", expression = "java(entity.isFeatured())")
     @Mapping(target = "courtCount", expression = "java((long)(entity.getCourts() != null ? entity.getCourts().size() : 0))")
     VenueSummaryDto toSummaryDto(VenueEntity entity);
 

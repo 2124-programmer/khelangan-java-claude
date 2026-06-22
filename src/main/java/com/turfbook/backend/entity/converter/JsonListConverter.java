@@ -1,7 +1,7 @@
 package com.turfbook.backend.entity.converter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
@@ -32,7 +32,17 @@ public class JsonListConverter implements AttributeConverter<List<String>, Strin
             return new ArrayList<>();
         }
         try {
-            return MAPPER.readValue(dbData, new TypeReference<List<String>>() {});
+            JsonNode node = MAPPER.readTree(dbData);
+            // Some JSON column types (e.g. H2's native JSON) hand the value back as a
+            // quoted JSON string (e.g. "[\"A\"]"); unwrap one layer in that case.
+            if (node.isTextual()) {
+                node = MAPPER.readTree(node.asText());
+            }
+            List<String> out = new ArrayList<>();
+            if (node.isArray()) {
+                node.forEach(n -> out.add(n.asText()));
+            }
+            return out;
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Error deserializing JSON to list", e);
         }

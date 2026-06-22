@@ -13,6 +13,7 @@ import com.turfbook.backend.repository.*;
 import com.turfbook.backend.service.BookingService;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.OwnerSettingsService;
+import com.turfbook.backend.service.subscription.SubscriptionGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -45,6 +46,7 @@ public class BookingServiceImpl implements BookingService {
     private final NotificationService notificationService;
     private final BookingMapper bookingMapper;
     private final OwnerSettingsService ownerSettingsService;
+    private final SubscriptionGate subscriptionGate;
 
     // ─── listBookings ──────────────────────────────────────────────────────
 
@@ -123,6 +125,12 @@ public class BookingServiceImpl implements BookingService {
         VenueEntity venue = venueRepository.findById(request.getVenueId())
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", request.getVenueId()));
 
+        // Block NEW bookings when the venue is not live (unapproved or no active subscription /
+        // expired). Already-confirmed future bookings are never affected by this gate.
+        if (!subscriptionGate.isVenueLive(venue.getId())) {
+            throw new ConflictException("This venue is not currently accepting new bookings.");
+        }
+
         CourtEntity court = courtRepository.findById(request.getCourtId())
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", request.getCourtId()));
 
@@ -195,7 +203,10 @@ public class BookingServiceImpl implements BookingService {
 
         // 7. Determine initial status and create/update slot (never persisted as AVAILABLE)
         UserEntity owner = venue.getOwner();
-        boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId());
+        // Auto-accept applies only when the owner enabled it AND this venue's active plan
+        // grants the AUTO_ACCEPT feature; otherwise the booking stays manual (PENDING).
+        boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId())
+                && subscriptionGate.hasFeature(venue.getId(), FeatureCode.AUTO_ACCEPT);
         SlotEntity.SlotStatus targetStatus = autoAccept ? SlotEntity.SlotStatus.BOOKED : SlotEntity.SlotStatus.HELD;
 
         if (slot == null) {
@@ -564,6 +575,12 @@ public class BookingServiceImpl implements BookingService {
         VenueEntity venue = venueRepository.findById(request.getVenueId())
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", request.getVenueId()));
 
+        // Block NEW bookings when the venue is not live (unapproved or no active subscription /
+        // expired). Already-confirmed future bookings are never affected by this gate.
+        if (!subscriptionGate.isVenueLive(venue.getId())) {
+            throw new ConflictException("This venue is not currently accepting new bookings.");
+        }
+
         CourtEntity court = courtRepository.findById(request.getCourtId())
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", request.getCourtId()));
 
@@ -576,7 +593,10 @@ public class BookingServiceImpl implements BookingService {
                         .id(1L).commissionPercent(10).convenienceFee(20).build());
 
         UserEntity owner = venue.getOwner();
-        boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId());
+        // Auto-accept applies only when the owner enabled it AND this venue's active plan
+        // grants the AUTO_ACCEPT feature; otherwise the booking stays manual (PENDING).
+        boolean autoAccept = ownerSettingsService.isAutoAccept(owner.getId())
+                && subscriptionGate.hasFeature(venue.getId(), FeatureCode.AUTO_ACCEPT);
         SlotEntity.SlotStatus targetStatus = autoAccept
                 ? SlotEntity.SlotStatus.BOOKED : SlotEntity.SlotStatus.HELD;
         LocalDate date = request.getDate();

@@ -297,6 +297,9 @@ components:
           type: integer
           format: int64
           description: Number of courts belonging to this venue (owner list only)
+        featured:
+          type: boolean
+          description: True when the venue's active plan grants the featured badge
 
     VenueDetailDto:
       type: object
@@ -1365,6 +1368,303 @@ components:
         decidedAt:
           type: string
           format: date-time
+        reason:
+          type: string
+
+    # ─── Subscriptions ────────────────────────────────────────────────────────
+    # Response DTOs use plain strings for enum-valued fields (matching the rest of
+    # this spec); request bodies keep enums so invalid input is rejected with 400.
+    # FeatureCode values: AUTO_ACCEPT, OFFERS, ANALYTICS, ADVANCED_ANALYTICS,
+    # PRIORITY_PLACEMENT, FEATURED_BADGE, PRIORITY_SUPPORT.
+    SubscriptionPlan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+          description: One of STARTER, GROWTH, PRO, PRO_MAX
+        name:
+          type: string
+        maxCourts:
+          type: integer
+        priceMonthly:
+          type: integer
+        priceAnnual:
+          type: integer
+        currency:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        photoLimit:
+          type: integer
+        placementWeight:
+          type: integer
+        trialDays:
+          type: integer
+        active:
+          type: boolean
+        displayOrder:
+          type: integer
+
+    UpdatePlanRequest:
+      type: object
+      description: Admin catalog edit. Code is immutable; omit a field to leave it unchanged.
+      properties:
+        name:
+          type: string
+        maxCourts:
+          type: integer
+          minimum: 1
+        priceMonthly:
+          type: integer
+          minimum: 0
+        priceAnnual:
+          type: integer
+          minimum: 0
+        features:
+          type: array
+          description: FeatureCode values. Unknown values are rejected.
+          items:
+            type: string
+        photoLimit:
+          type: integer
+          minimum: 0
+        placementWeight:
+          type: integer
+          minimum: 0
+        trialDays:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+        displayOrder:
+          type: integer
+
+    Subscription:
+      type: object
+      description: >
+        A venue subscription. Carries snapshot fields (planCode, planName, price,
+        maxCourts, features) so history stays accurate if the catalog later changes.
+        All period dates are computed and owned by the server.
+      properties:
+        id:
+          type: integer
+          format: int64
+        ownerId:
+          type: integer
+          format: int64
+        venueId:
+          type: integer
+          format: int64
+        planId:
+          type: integer
+          format: int64
+        planCode:
+          type: string
+        planName:
+          type: string
+        billingCycle:
+          type: string
+          description: MONTHLY or ANNUAL
+        status:
+          type: string
+          description: TRIALING, ACTIVE, PAST_DUE, EXPIRED, CANCELED, or VOIDED
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        trialEnd:
+          type: string
+          format: date-time
+          nullable: true
+        price:
+          type: integer
+        currency:
+          type: string
+        maxCourts:
+          type: integer
+        features:
+          type: array
+          items:
+            type: string
+        activationSource:
+          type: string
+          description: ADMIN_MANUAL or PROVIDER
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SubscriptionCreateRequest:
+      type: object
+      description: Admin manual activation. Contains NO date fields — the server computes all periods.
+      required: [ownerId, venueId, planId, billingCycle]
+      properties:
+        ownerId:
+          type: integer
+          format: int64
+        venueId:
+          type: integer
+          format: int64
+        planId:
+          type: integer
+          format: int64
+        billingCycle:
+          type: string
+          enum: [MONTHLY, ANNUAL]
+        asTrial:
+          type: boolean
+          default: false
+        paymentMethod:
+          type: string
+          enum: [CASH, UPI_OFFLINE, BANK_TRANSFER, PROVIDER]
+        paymentReference:
+          type: string
+        notes:
+          type: string
+
+    SubscriptionEditRequest:
+      type: object
+      description: Admin correction of plan/cycle. Contains NO date fields — the server recomputes periods.
+      properties:
+        planId:
+          type: integer
+          format: int64
+        billingCycle:
+          type: string
+          enum: [MONTHLY, ANNUAL]
+        notes:
+          type: string
+
+    SubscriptionPayment:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        subscriptionId:
+          type: integer
+          format: int64
+        amount:
+          type: integer
+        currency:
+          type: string
+        method:
+          type: string
+          description: CASH, UPI_OFFLINE, BANK_TRANSFER, or PROVIDER
+        status:
+          type: string
+          description: RECORDED, PENDING, or FAILED
+        paidAt:
+          type: string
+          format: date-time
+        recordedByAdminId:
+          type: integer
+          format: int64
+          nullable: true
+        reference:
+          type: string
+
+    SubscriptionChangeRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        ownerId:
+          type: integer
+          format: int64
+        venueId:
+          type: integer
+          format: int64
+        currentSubscriptionId:
+          type: integer
+          format: int64
+          nullable: true
+        requestedPlanId:
+          type: integer
+          format: int64
+        requestedPlanCode:
+          type: string
+        requestedPlanName:
+          type: string
+        requestedCycle:
+          type: string
+          description: MONTHLY or ANNUAL
+        status:
+          type: string
+          description: PENDING, APPROVED, REJECTED, or CANCELLED
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+
+    VenueSubscriptionView:
+      type: object
+      description: Owner/admin view of a venue's subscription state, usage, and recent history.
+      properties:
+        current:
+          allOf:
+            - $ref: '#/components/schemas/Subscription'
+          nullable: true
+        courtsUsed:
+          type: integer
+        courtsAllowed:
+          type: integer
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subscription'
+        pendingChangeRequest:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionChangeRequest'
+          nullable: true
+
+    SubscriptionPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subscription'
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        size:
+          type: integer
+        number:
+          type: integer
+
+    UpgradeRequestCreate:
+      type: object
+      required: [requestedPlanId, billingCycle]
+      properties:
+        requestedPlanId:
+          type: integer
+          format: int64
+        billingCycle:
+          type: string
+          enum: [MONTHLY, ANNUAL]
+
+    RejectChangeRequest:
+      type: object
+      required: [reason]
+      properties:
         reason:
           type: string
 
@@ -3239,3 +3539,313 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformSettingsDto'
+
+  # ─── Admin: Subscription plans & subscriptions ────────────────────────────
+  /api/v1/admin/subscription-plans:
+    get:
+      tags: [AdminSubscriptions]
+      summary: List subscription plans (Admin)
+      operationId: adminListSubscriptionPlans
+      responses:
+        '200':
+          description: All plans ordered by displayOrder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubscriptionPlan'
+
+  /api/v1/admin/subscription-plans/{id}:
+    put:
+      tags: [AdminSubscriptions]
+      summary: Edit a plan's catalog values (Admin)
+      operationId: adminUpdateSubscriptionPlan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlanRequest'
+      responses:
+        '200':
+          description: Updated plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionPlan'
+
+  /api/v1/admin/subscriptions:
+    get:
+      tags: [AdminSubscriptions]
+      summary: List subscriptions with optional filters (Admin)
+      operationId: adminListSubscriptions
+      parameters:
+        - name: venueId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: ownerId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Page of subscriptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionPage'
+    post:
+      tags: [AdminSubscriptions]
+      summary: Manually create/activate a subscription (Admin). Server computes all dates.
+      operationId: adminCreateSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionCreateRequest'
+      responses:
+        '201':
+          description: Created subscription (venue goes live)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+
+  /api/v1/admin/subscriptions/{id}:
+    put:
+      tags: [AdminSubscriptions]
+      summary: Edit subscription plan/cycle (Admin). Server recomputes dates + re-applies features.
+      operationId: adminEditSubscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionEditRequest'
+      responses:
+        '200':
+          description: Updated subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+    delete:
+      tags: [AdminSubscriptions]
+      summary: Soft-void a subscription (Admin). Re-evaluates venue live status.
+      operationId: adminVoidSubscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Voided subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+
+  /api/v1/admin/subscriptions/{id}/renew:
+    post:
+      tags: [AdminSubscriptions]
+      summary: Renew/extend a subscription with a fresh server-computed period (Admin).
+      operationId: adminRenewSubscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Renewed subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+
+  /api/v1/admin/venues/{venueId}/subscription:
+    get:
+      tags: [AdminSubscriptions]
+      summary: Current subscription + history for a venue (Admin)
+      operationId: adminGetVenueSubscription
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Venue subscription view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionView'
+
+  /api/v1/admin/subscription-change-requests:
+    get:
+      tags: [AdminSubscriptions]
+      summary: List subscription change/upgrade requests (Admin)
+      operationId: adminListChangeRequests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            default: PENDING
+      responses:
+        '200':
+          description: List of change requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubscriptionChangeRequest'
+
+  /api/v1/admin/subscription-change-requests/{id}/activate:
+    post:
+      tags: [AdminSubscriptions]
+      summary: Activate a pending change request as a new subscription (Admin)
+      operationId: adminActivateChangeRequest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The newly activated subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+
+  /api/v1/admin/subscription-change-requests/{id}/reject:
+    post:
+      tags: [AdminSubscriptions]
+      summary: Reject a pending change request (Admin)
+      operationId: adminRejectChangeRequest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectChangeRequest'
+      responses:
+        '200':
+          description: The rejected change request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionChangeRequest'
+
+  # ─── Owner: Subscription ──────────────────────────────────────────────────
+  /api/v1/owner/subscription-plans:
+    get:
+      tags: [OwnerSubscriptions]
+      summary: List active plans for the upgrade comparison (Owner)
+      operationId: listOwnerSubscriptionPlans
+      responses:
+        '200':
+          description: Active plans ordered by displayOrder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubscriptionPlan'
+
+  /api/v1/owner/venues/{venueId}/subscription:
+    get:
+      tags: [OwnerSubscriptions]
+      summary: Current plan + usage + recent history + pending request (Owner)
+      operationId: getOwnerVenueSubscription
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Venue subscription view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionView'
+
+  /api/v1/owner/venues/{venueId}/subscription/upgrade-requests:
+    post:
+      tags: [OwnerSubscriptions]
+      summary: Submit an upgrade/plan-change request (Owner). Admin activates it.
+      operationId: createUpgradeRequest
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpgradeRequestCreate'
+      responses:
+        '201':
+          description: The created pending change request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionChangeRequest'

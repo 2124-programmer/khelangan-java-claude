@@ -18,12 +18,16 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
 
     Page<VenueEntity> findByStatus(VenueEntity.VenueStatus status, Pageable pageable);
 
+    // A venue is shown to players only when approved (status LIVE) AND it holds an
+    // active/trialing subscription (denormalized subscriptionActive flag). Ordering applies
+    // the active plan's placementWeight (0 when no PRIORITY_PLACEMENT) on top of rating.
     @Query("SELECT DISTINCT v FROM VenueEntity v LEFT JOIN v.sports s WHERE " +
-           "v.status = :liveStatus AND " +
+           "v.status = :liveStatus AND v.subscriptionActive = true AND " +
            "(:city IS NULL OR LOWER(v.city) = LOWER(:city)) AND " +
            "(:sportId IS NULL OR s.id = :sportId) AND " +
            "(:search IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
-           "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :search, '%')))")
+           "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "ORDER BY v.placementWeight DESC, COALESCE(v.ratingAverage, 0) DESC, v.id DESC")
     Page<VenueEntity> findLiveVenues(
             @Param("liveStatus") VenueEntity.VenueStatus liveStatus,
             @Param("city") String city,

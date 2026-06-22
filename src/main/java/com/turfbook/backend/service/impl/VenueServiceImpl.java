@@ -3,6 +3,7 @@ package com.turfbook.backend.service.impl;
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.*;
 import com.turfbook.backend.exception.ConflictException;
+import com.turfbook.backend.exception.ForbiddenException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.CourtMapper;
@@ -11,6 +12,7 @@ import com.turfbook.backend.mapper.VenueMapper;
 import com.turfbook.backend.repository.*;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.VenueService;
+import com.turfbook.backend.service.subscription.SubscriptionGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -46,6 +48,7 @@ public class VenueServiceImpl implements VenueService {
     private final CourtMapper courtMapper;
     private final SlotMapper slotMapper;
     private final NotificationService notificationService;
+    private final SubscriptionGate subscriptionGate;
 
     // ─── Venues ────────────────────────────────────────────────────────────
 
@@ -175,7 +178,14 @@ public class VenueServiceImpl implements VenueService {
         if (request.getPricePerHour() != null) venue.setPricePerHour(request.getPricePerHour());
         if (request.getAmenities() != null) venue.setAmenities(request.getAmenities());
         if (request.getCoverPhoto() != null) venue.setCoverPhoto(request.getCoverPhoto());
-        if (request.getPhotos() != null) venue.setPhotos(request.getPhotos());
+        if (request.getPhotos() != null) {
+            int photoLimit = subscriptionGate.photoLimitFor(id);
+            if (photoLimit > 0 && request.getPhotos().size() > photoLimit) {
+                throw new ForbiddenException(
+                        "Your plan allows up to " + photoLimit + " photos. Upgrade to add more.");
+            }
+            venue.setPhotos(request.getPhotos());
+        }
         if (request.getSportIds() != null && !request.getSportIds().isEmpty()) {
             venue.setSports(resolveSports(request.getSportIds()));
         }
@@ -275,6 +285,8 @@ public class VenueServiceImpl implements VenueService {
         if (!venue.getOwner().getId().equals(ownerId)) {
             throw new UnauthorizedException("You do not own this venue");
         }
+        // Enforce the active plan's court limit (409 if no active plan or limit reached).
+        subscriptionGate.assertCanAddCourt(venueId);
         return courtMapper.toDto(createCourtInternal(venue, request));
     }
 

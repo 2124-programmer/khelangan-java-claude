@@ -109,6 +109,28 @@ public class VenueEntity {
     @Builder.Default
     private boolean isActive = true;
 
+    /**
+     * Denormalized live-gating flag, recomputed on every subscription transition.
+     * True only when the venue holds a current TRIALING/ACTIVE subscription within its
+     * period. The player venues query requires status=LIVE AND this flag true.
+     */
+    @Column(name = "subscription_active", nullable = false)
+    @Builder.Default
+    private boolean subscriptionActive = false;
+
+    /**
+     * Placement boost from the active plan (0 when no PRIORITY_PLACEMENT feature).
+     * Used to rank venues ahead of the default rating/distance ordering.
+     */
+    @Column(name = "placement_weight", nullable = false)
+    @Builder.Default
+    private int placementWeight = 0;
+
+    /** Denormalized: true when the active plan grants FEATURED_BADGE (player UI badge). */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean featured = false;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "venue_sports",
