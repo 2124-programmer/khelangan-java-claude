@@ -135,6 +135,12 @@
             <artifactId>jakarta.annotation-api</artifactId>
         </dependency>
 
+        <!-- Email (SMTP) — required for password-reset OTP and email-change notifications -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- DevTools – hot reload on file save -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -192,6 +198,7 @@
                             <inputSpec>${project.basedir}/src/main/resources/openapi/api.yaml</inputSpec>
                             <generatorName>spring</generatorName>
                             <output>${openapi.generated.sources.dir}</output>
+                            <ignoreFileOverride>${project.basedir}/src/main/resources/openapi/.openapi-generator-ignore</ignoreFileOverride>
                             <apiPackage>com.turfbook.backend.api</apiPackage>
                             <modelPackage>com.turfbook.backend.dto</modelPackage>
                             <configOptions>
@@ -206,6 +213,26 @@
                                 <hideGenerationTimestamp>true</hideGenerationTimestamp>
                                 <skipDefaultInterface>true</skipDefaultInterface>
                             </configOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Delete generated DTOs that conflict with hand-written copies -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>delete-conflicting-generated-dtos</id>
+                        <phase>process-sources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <delete quiet="true" file="${openapi.generated.sources.dir}/src/main/java/com/turfbook/backend/dto/ChangePasswordRequest.java"/>
+                                <delete quiet="true" file="${openapi.generated.sources.dir}/src/main/java/com/turfbook/backend/dto/EmailChangeRequestDto.java"/>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>

@@ -15,4 +15,16 @@ public interface AuthService {
     MessageResponse forgotPassword(ForgotPasswordRequest request);
 
     AuthResponse refreshToken(RefreshTokenRequest request);
+
+    // ── New: change password (authenticated) ─────────────────────────────────
+
+    AuthResponse changePassword(Long userId, ChangePasswordRequest request);
+
+    // ── New: password-reset via email OTP (public / unauthenticated) ─────────
+
+    MessageResponse requestPasswordReset(PasswordResetRequest request);
+
+    PasswordResetVerifyResponse verifyPasswordResetOtp(PasswordResetVerifyRequest request);
+
+    MessageResponse confirmPasswordReset(PasswordResetConfirmRequest request);
 }

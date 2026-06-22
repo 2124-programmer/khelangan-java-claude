@@ -1343,6 +1343,31 @@ components:
         message:
           type: string
 
+    EmailChangeRequestDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        currentEmail:
+          type: string
+        newEmail:
+          type: string
+        status:
+          type: string
+          enum: [PENDING_VERIFICATION, PENDING, APPROVED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+
 paths:
   # ─── Auth ─────────────────────────────────────────────────────────────────
   /api/v1/auth/register:
@@ -1494,6 +1519,283 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+
+  # ─── Auth Security (standalone — not generated into AuthApi) ─────────────
+  /api/v1/auth/change-password:
+    post:
+      tags: [AuthSecurity]
+      summary: Change password (authenticated)
+      operationId: changePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password changed; fresh JWT returned for current device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Current password incorrect
+        '400':
+          description: Weak/invalid password or same as current
+        '429':
+          description: Rate-limited
+
+  /api/v1/auth/password-reset/request:
+    post:
+      tags: [AuthSecurity]
+      summary: Request password reset via email OTP (enumeration-safe)
+      operationId: requestPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Generic success (same response whether email exists or not)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/v1/auth/password-reset/verify:
+    post:
+      tags: [AuthSecurity]
+      summary: Verify password-reset OTP; returns a single-use reset token
+      operationId: verifyPasswordResetOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp]
+              properties:
+                email:
+                  type: string
+                  format: email
+                otp:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+      responses:
+        '200':
+          description: OTP verified; returns short-lived reset token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resetToken:
+                    type: string
+        '400':
+          description: Invalid / expired OTP or too many attempts
+
+  /api/v1/auth/password-reset/confirm:
+    post:
+      tags: [AuthSecurity]
+      summary: Set new password using the reset token
+      operationId: confirmPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resetToken, newPassword]
+              properties:
+                resetToken:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Invalid/expired reset token or weak password
+
+  # ─── Email Change (owner → admin approval) ────────────────────────────────
+  /api/v1/owner/email-change-requests:
+    post:
+      tags: [EmailChange]
+      summary: Owner submits new email — sends OTP to new address
+      operationId: createEmailChangeRequest
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newEmail]
+              properties:
+                newEmail:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: OTP sent to new email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '409':
+          description: Email already in use or pending request exists
+
+  /api/v1/owner/email-change-requests/verify:
+    post:
+      tags: [EmailChange]
+      summary: Owner verifies new-email OTP — request moves to PENDING
+      operationId: verifyEmailChangeOtp
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otp]
+              properties:
+                otp:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+      responses:
+        '200':
+          description: OTP verified; request now in admin queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChangeRequestDto'
+
+  /api/v1/owner/email-change-requests/me:
+    get:
+      tags: [EmailChange]
+      summary: Get current email-change request status
+      operationId: getEmailChangeStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Latest request or 204 if none
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChangeRequestDto'
+        '204':
+          description: No request on file
+
+  /api/v1/admin/email-change-requests:
+    get:
+      tags: [EmailChange]
+      summary: Admin — list email-change requests by status
+      operationId: adminListEmailChangeRequests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING_VERIFICATION, PENDING, APPROVED, REJECTED]
+            default: PENDING
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list
+
+  /api/v1/admin/email-change-requests/{id}/approve:
+    post:
+      tags: [EmailChange]
+      summary: Admin — approve email change
+      operationId: adminApproveEmailChange
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Approved; user email updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChangeRequestDto'
+
+  /api/v1/admin/email-change-requests/{id}/reject:
+    post:
+      tags: [EmailChange]
+      summary: Admin — reject email change
+      operationId: adminRejectEmailChange
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChangeRequestDto'
 
   # ─── Users ────────────────────────────────────────────────────────────────
   /api/v1/users/me:

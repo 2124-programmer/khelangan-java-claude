@@ -1,0 +1,3 @@
+# Files managed by hand — do not overwrite with generated code
+src/main/java/com/turfbook/backend/dto/ChangePasswordRequest.java
+src/main/java/com/turfbook/backend/dto/EmailChangeRequestDto.java

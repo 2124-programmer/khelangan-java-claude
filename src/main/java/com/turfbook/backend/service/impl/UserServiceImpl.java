@@ -90,7 +90,7 @@ public class UserServiceImpl implements UserService {
         user.setRole(targetRole);
         userRepository.save(user);
 
-        String newToken = tokenProvider.generateToken(user.getId(), targetRole.name());
+        String newToken = tokenProvider.generateToken(user.getId(), targetRole.name(), user.getTokenVersion());
 
         AuthResponse response = new AuthResponse();
         response.setToken(newToken);

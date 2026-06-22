@@ -27,13 +27,14 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(Long userId, String role) {
+    public String generateToken(Long userId, String role, int tokenVersion) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("role", role)
+                .claim("tv", tokenVersion)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -48,6 +49,12 @@ public class JwtTokenProvider {
     public String getRoleFromToken(String token) {
         Claims claims = parseClaims(token);
         return claims.get("role", String.class);
+    }
+
+    public int getTokenVersionFromToken(String token) {
+        Claims claims = parseClaims(token);
+        Integer tv = claims.get("tv", Integer.class);
+        return tv != null ? tv : 0;
     }
 
     public boolean validateToken(String token) {

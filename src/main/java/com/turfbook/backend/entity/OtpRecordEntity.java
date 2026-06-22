@@ -18,12 +18,23 @@ import java.time.LocalDateTime;
 @Builder
 public class OtpRecordEntity {
 
+    public enum Purpose {
+        AUTH_OTP,
+        PASSWORD_RESET,
+        EMAIL_CHANGE_VERIFY
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, length = 255)
     private String email;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30, columnDefinition = "VARCHAR(30) DEFAULT 'AUTH_OTP'")
+    @Builder.Default
+    private Purpose purpose = Purpose.AUTH_OTP;
 
     @Column(name = "code_hash", nullable = false, length = 64)
     private String codeHash;

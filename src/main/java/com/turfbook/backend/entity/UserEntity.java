@@ -62,6 +62,11 @@ public class UserEntity {
     @Builder.Default
     private boolean isBlocked = false;
 
+    /** Incremented on password change/reset/email-change to invalidate all existing JWTs. */
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    private int tokenVersion = 0;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

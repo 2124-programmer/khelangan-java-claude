@@ -32,6 +32,20 @@ spring:
     baseline-on-migrate: false
     validate-on-migrate: false
 
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:noreply@scoreadda.com}
+    password: ${MAIL_PASS:changeme}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        debug: false
+
   jackson:
     serialization:
       write-dates-as-timestamps: false
