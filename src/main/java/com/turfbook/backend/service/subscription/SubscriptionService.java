@@ -9,6 +9,7 @@ import com.turfbook.backend.dto.SubscriptionPage;
 import com.turfbook.backend.dto.SubscriptionPlan;
 import com.turfbook.backend.dto.UpdatePlanRequest;
 import com.turfbook.backend.dto.UpgradeRequestCreate;
+import com.turfbook.backend.dto.VenueSubscriptionPage;
 import com.turfbook.backend.dto.VenueSubscriptionView;
 
 import java.util.List;
@@ -34,6 +35,9 @@ public interface SubscriptionService {
     Subscription adminRenewSubscription(Long subscriptionId, Long adminId);
 
     SubscriptionPage adminListSubscriptions(Long venueId, Long ownerId, String status, int page, int size);
+
+    /** Searchable, paginated table of every venue's current subscription (admin). */
+    VenueSubscriptionPage adminListVenueSubscriptions(String q, String status, int page, int size);
 
     VenueSubscriptionView adminGetVenueSubscription(Long venueId);
 

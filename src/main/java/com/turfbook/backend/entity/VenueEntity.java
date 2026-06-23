@@ -155,4 +155,8 @@ public class VenueEntity {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    /** When the venue was first approved (status → LIVE). Null until approved. Drives the lifecycle timeline. */
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
 }

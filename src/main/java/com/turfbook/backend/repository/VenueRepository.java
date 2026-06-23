@@ -36,6 +36,21 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
             Pageable pageable
     );
 
+    /**
+     * Admin subscription table: every venue that has entered the pipeline (anything but DRAFT),
+     * matched against name, city, owner name, or owner phone. Subscription-status filtering and
+     * pagination are applied in the service after the current subscription is resolved per row.
+     */
+    @Query("SELECT v FROM VenueEntity v WHERE v.status <> :excludeStatus AND " +
+           "(:q IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(v.owner.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR v.owner.phone LIKE CONCAT('%', :q, '%')) " +
+           "ORDER BY v.name ASC")
+    List<VenueEntity> searchForSubscriptionTable(
+            @Param("q") String q,
+            @Param("excludeStatus") VenueEntity.VenueStatus excludeStatus);
+
     long countByStatus(VenueEntity.VenueStatus status);
 
     @Query("SELECT COUNT(v) FROM VenueEntity v WHERE v.owner = :owner AND v.status = :liveStatus")

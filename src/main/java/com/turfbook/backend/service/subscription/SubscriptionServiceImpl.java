@@ -8,7 +8,15 @@ import com.turfbook.backend.dto.SubscriptionEditRequest;
 import com.turfbook.backend.dto.SubscriptionPage;
 import com.turfbook.backend.dto.SubscriptionPlan;
 import com.turfbook.backend.dto.UpdatePlanRequest;
+import com.turfbook.backend.dto.StageKey;
+import com.turfbook.backend.dto.StageState;
+import com.turfbook.backend.dto.SubscriptionOwnerRef;
+import com.turfbook.backend.dto.SubscriptionTimeline;
+import com.turfbook.backend.dto.SubscriptionVenueRef;
+import com.turfbook.backend.dto.TimelineStage;
 import com.turfbook.backend.dto.UpgradeRequestCreate;
+import com.turfbook.backend.dto.VenueSubscriptionPage;
+import com.turfbook.backend.dto.VenueSubscriptionRow;
 import com.turfbook.backend.dto.VenueSubscriptionView;
 import com.turfbook.backend.entity.ActivationSource;
 import com.turfbook.backend.entity.BillingCycle;
@@ -22,6 +30,7 @@ import com.turfbook.backend.entity.SubscriptionPlanEntity;
 import com.turfbook.backend.entity.SubscriptionStatus;
 import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.entity.VenueEntity;
+import com.turfbook.backend.entity.VenueLifecycleEventEntity;
 import com.turfbook.backend.exception.BadRequestException;
 import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.CourtLimitExceededException;
@@ -33,6 +42,7 @@ import com.turfbook.backend.repository.SubscriptionPaymentRepository;
 import com.turfbook.backend.repository.SubscriptionPlanRepository;
 import com.turfbook.backend.repository.SubscriptionRepository;
 import com.turfbook.backend.repository.UserRepository;
+import com.turfbook.backend.repository.VenueLifecycleEventRepository;
 import com.turfbook.backend.repository.VenueRepository;
 import com.turfbook.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +54,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -59,6 +72,10 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
 
     private static final int OWNER_HISTORY_LIMIT = 5;
     private static final int ADMIN_HISTORY_LIMIT = 10;
+    /** A subscription within this many days of its end date rolls up as EXPIRING in the table. */
+    private static final int EXPIRING_SOON_DAYS = 7;
+    /** India Standard Time has no DST, so a fixed offset is exact. */
+    private static final ZoneOffset IST_OFFSET = ZoneOffset.of("+05:30");
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionPlanRepository planRepository;
@@ -67,6 +84,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     private final VenueRepository venueRepository;
     private final UserRepository userRepository;
     private final CourtRepository courtRepository;
+    private final VenueLifecycleEventRepository lifecycleEventRepository;
     private final SubscriptionMapper mapper;
     private final SubscriptionDateCalculator dates;
     private final NotificationService notificationService;
@@ -146,6 +164,9 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
 
         recordPayment(sub, asTrial ? 0 : sub.getPrice(), req.getPaymentMethod(), req.getPaymentReference(), adminId);
         recomputeVenueLive(venue);
+        recordLifecycle(venue, asTrial
+                ? VenueLifecycleEventEntity.Type.TRIAL_ACTIVATED
+                : VenueLifecycleEventEntity.Type.SUBSCRIPTION_STARTED, plan.getName());
 
         notifyOwner(owner, venue, asTrial
                 ? String.format("Your venue '%s' is now live on a %d-day trial of %s.",
@@ -197,6 +218,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         sub = subscriptionRepository.save(sub);
 
         recomputeVenueLive(sub.getVenue());
+        recordLifecycle(sub.getVenue(), VenueLifecycleEventEntity.Type.SUBSCRIPTION_CHANGED, plan.getName());
         log.info("Admin edited subscription {} -> plan {}, cycle {}", sub.getId(), plan.getCode(), cycle);
         return mapper.toDto(sub);
     }
@@ -209,6 +231,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         sub.setStatus(SubscriptionStatus.VOIDED);
         sub = subscriptionRepository.save(sub);
         recomputeVenueLive(sub.getVenue());
+        recordLifecycle(sub.getVenue(), VenueLifecycleEventEntity.Type.SUSPENDED, sub.getPlanName());
         notifyOwner(sub.getOwner(), sub.getVenue(),
                 String.format("Your venue '%s' subscription was voided and the venue is no longer live.",
                         sub.getVenue().getName()));
@@ -243,6 +266,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
 
         recordPayment(sub, sub.getPrice(), null, "RENEWAL", adminId);
         recomputeVenueLive(sub.getVenue());
+        recordLifecycle(sub.getVenue(), VenueLifecycleEventEntity.Type.SUBSCRIPTION_RENEWED, sub.getPlanName());
         notifyOwner(sub.getOwner(), sub.getVenue(),
                 String.format("Your venue '%s' subscription was renewed and is live again.", sub.getVenue().getName()));
         log.info("Renewed subscription {} (venue {}) to {}", sub.getId(), sub.getVenue().getId(), sub.getPeriodEnd());
@@ -268,7 +292,53 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     public VenueSubscriptionView adminGetVenueSubscription(Long venueId) {
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
-        return buildView(venue, ADMIN_HISTORY_LIMIT);
+        VenueSubscriptionView view = buildView(venue, ADMIN_HISTORY_LIMIT);
+        // Admin detail adds venue/owner context + the lifecycle timeline (owner view leaves these null).
+        UserEntity owner = venue.getOwner();
+        view.setVenue(new SubscriptionVenueRef()
+                .id(venue.getId())
+                .name(venue.getName())
+                .city(venue.getCity())
+                .courtCount((int) courtRepository.countByVenue(venue))
+                .registeredAt(odt(venue.getCreatedAt()))
+                .approvedAt(odt(venue.getApprovedAt())));
+        if (owner != null) {
+            view.setOwner(new SubscriptionOwnerRef()
+                    .id(owner.getId())
+                    .name(owner.getName())
+                    .mobile(owner.getPhone())
+                    .email(owner.getEmail()));
+        }
+        view.setTimeline(buildTimeline(venue));
+        return view;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public VenueSubscriptionPage adminListVenueSubscriptions(String q, String status, int page, int size) {
+        String term = (q == null || q.isBlank()) ? null : q.trim();
+        String filter = (status == null || status.isBlank()) ? "ALL" : status.trim().toUpperCase();
+        int sz = size <= 0 ? 15 : size;
+        int pg = Math.max(0, page);
+
+        List<VenueSubscriptionRow> rows = new ArrayList<>();
+        for (VenueEntity venue : venueRepository.searchForSubscriptionTable(term, VenueEntity.VenueStatus.DRAFT)) {
+            VenueSubscriptionRow row = buildRow(venue);
+            if (matchesStatusFilter(row.getCurrentStatus(), filter)) {
+                rows.add(row);
+            }
+        }
+
+        int total = rows.size();
+        int from = Math.min(pg * sz, total);
+        int to = Math.min(from + sz, total);
+        int totalPages = (int) Math.ceil((double) total / sz);
+        return new VenueSubscriptionPage()
+                .content(new ArrayList<>(rows.subList(from, to)))
+                .totalElements((long) total)
+                .totalPages(totalPages)
+                .size(sz)
+                .number(pg);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -322,6 +392,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
 
         recordPayment(sub, sub.getPrice(), null, "UPGRADE", adminId);
         recomputeVenueLive(venue);
+        recordLifecycle(venue, VenueLifecycleEventEntity.Type.SUBSCRIPTION_CHANGED, plan.getName());
         notifyOwner(request.getOwner(), venue,
                 String.format("Your upgrade to the %s plan for '%s' is now active.", plan.getName(), venue.getName()));
         log.info("Activated change request {} -> subscription {} (plan {})", requestId, sub.getId(), plan.getCode());
@@ -505,6 +576,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         applySnapshotAndActivate(sub, plan, BillingCycle.MONTHLY, true); // trial
         subscriptionRepository.save(sub);
         recomputeVenueLive(venue);
+        recordLifecycle(venue, VenueLifecycleEventEntity.Type.TRIAL_ACTIVATED, plan.getName());
         notifyOwner(venue.getOwner(), venue, String.format(
                 "Your venue '%s' is approved and live on a %d-day free trial of %s. "
                         + "Activate a paid plan before the trial ends to stay live.",
@@ -599,6 +671,123 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 .reference(reference)
                 .build();
         paymentRepository.save(payment);
+    }
+
+    private OffsetDateTime odt(LocalDateTime ldt) {
+        return ldt == null ? null : ldt.atOffset(IST_OFFSET);
+    }
+
+    /** Build one admin-table row for a venue from its current subscription + pending request. */
+    private VenueSubscriptionRow buildRow(VenueEntity venue) {
+        UserEntity owner = venue.getOwner();
+        SubscriptionEntity current = currentEntity(venue).orElse(null);
+        VenueSubscriptionRow row = new VenueSubscriptionRow()
+                .venueId(venue.getId())
+                .venueName(venue.getName())
+                .venueCity(venue.getCity())
+                .ownerName(owner != null ? owner.getName() : null)
+                .ownerMobile(owner != null ? owner.getPhone() : null)
+                .courtsUsed((int) courtRepository.countByVenue(venue));
+
+        if (current != null) {
+            LocalDateTime end = current.getStatus() == SubscriptionStatus.TRIALING && current.getTrialEnd() != null
+                    ? current.getTrialEnd() : current.getPeriodEnd();
+            row.currentPlanCode(current.getPlanCode() != null ? current.getPlanCode().name() : null)
+               .currentPlanName(current.getPlanName())
+               .endDate(odt(end))
+               .courtLimit(current.getMaxCourts())
+               .currentStatus(rollupStatus(current, end));
+        } else {
+            row.currentStatus(subscriptionRepository.existsByVenue(venue) ? "EXPIRED" : "NONE");
+        }
+
+        changeRequestRepository
+                .findFirstByVenueAndStatusOrderByCreatedAtDesc(venue, SubscriptionChangeRequestEntity.Status.PENDING)
+                .ifPresent(req -> row
+                        .pendingRequestId(req.getId())
+                        .pendingCurrentPlanName(current != null ? current.getPlanName() : null)
+                        .pendingRequestedPlanName(req.getRequestedPlan().getName()));
+        return row;
+    }
+
+    /** Row-level status rollup: ACTIVE / TRIAL / EXPIRING / EXPIRED. */
+    private String rollupStatus(SubscriptionEntity current, LocalDateTime end) {
+        if (current.getStatus() == SubscriptionStatus.TRIALING) return "TRIAL";
+        if (current.getStatus() == SubscriptionStatus.PAST_DUE) return "EXPIRING";
+        if (end != null) {
+            long days = ChronoUnit.DAYS.between(dates.now(), end);
+            if (days < 0) return "EXPIRED";
+            if (days <= EXPIRING_SOON_DAYS) return "EXPIRING";
+        }
+        return "ACTIVE";
+    }
+
+    private boolean matchesStatusFilter(String rowStatus, String filter) {
+        if ("ALL".equals(filter)) return true;
+        return filter.equals(rowStatus);
+    }
+
+    /** Compute the fixed-milestone lifecycle timeline with exactly one LIVE stage. */
+    private SubscriptionTimeline buildTimeline(VenueEntity venue) {
+        List<SubscriptionEntity> all = subscriptionRepository.findByVenueOrderByIdDesc(venue);
+        // Earliest trial start = the oldest subscription that carried a trial period.
+        LocalDateTime trialStart = all.stream()
+                .filter(s -> s.getTrialEnd() != null)
+                .map(SubscriptionEntity::getPeriodStart)
+                .reduce((a, b) -> a.isBefore(b) ? a : b)
+                .orElse(null);
+        // Paid-subscription start = oldest non-trial ACTIVE/PAST_DUE period.
+        LocalDateTime subStart = all.stream()
+                .filter(s -> s.getTrialEnd() == null
+                        && (s.getStatus() == SubscriptionStatus.ACTIVE
+                            || s.getStatus() == SubscriptionStatus.PAST_DUE
+                            || s.getStatus() == SubscriptionStatus.CANCELED
+                            || s.getStatus() == SubscriptionStatus.EXPIRED))
+                .map(SubscriptionEntity::getPeriodStart)
+                .reduce((a, b) -> a.isBefore(b) ? a : b)
+                .orElse(null);
+
+        SubscriptionEntity current = currentEntity(venue).orElse(null);
+        boolean approved = venue.getApprovedAt() != null || venue.getStatus() == VenueEntity.VenueStatus.LIVE;
+
+        // Index into [REGISTERED, APPROVED, TRIAL_ACTIVATED, SUBSCRIPTION] that is currently LIVE.
+        int liveIdx;
+        if (current != null && current.getStatus() == SubscriptionStatus.ACTIVE) liveIdx = 3;
+        else if (current != null && current.getStatus() == SubscriptionStatus.PAST_DUE) liveIdx = 3;
+        else if (current != null && current.getStatus() == SubscriptionStatus.TRIALING) liveIdx = 2;
+        else if (approved) liveIdx = 1;
+        else liveIdx = 0;
+
+        StageKey[] keys = { StageKey.REGISTERED, StageKey.APPROVED, StageKey.TRIAL_ACTIVATED, StageKey.SUBSCRIPTION };
+        String[] labels = { "Registered", "Approved", "Trial activated", "Subscription" };
+        OffsetDateTime[] occurred = {
+                odt(venue.getCreatedAt()),
+                odt(venue.getApprovedAt()),
+                odt(trialStart),
+                odt(subStart != null ? subStart : (current != null && current.getStatus() == SubscriptionStatus.ACTIVE
+                        ? current.getPeriodStart() : null)),
+        };
+
+        List<TimelineStage> stages = new ArrayList<>(4);
+        for (int i = 0; i < keys.length; i++) {
+            StageState state = i < liveIdx ? StageState.COMPLETED : (i == liveIdx ? StageState.LIVE : StageState.PENDING);
+            stages.add(new TimelineStage().key(keys[i]).label(labels[i]).occurredAt(occurred[i]).state(state));
+        }
+        return new SubscriptionTimeline().stages(stages).liveStageKey(keys[liveIdx]);
+    }
+
+    /** Append a lifecycle audit event for the venue (best-effort; never blocks the main flow). */
+    private void recordLifecycle(VenueEntity venue, VenueLifecycleEventEntity.Type type, String meta) {
+        try {
+            lifecycleEventRepository.save(VenueLifecycleEventEntity.builder()
+                    .venue(venue)
+                    .type(type)
+                    .occurredAt(dates.now())
+                    .meta(meta)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to record lifecycle event {} for venue {}: {}", type, venue.getId(), e.getMessage());
+        }
     }
 
     private VenueSubscriptionView buildView(VenueEntity venue, int historyLimit) {

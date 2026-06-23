@@ -9,6 +9,7 @@ import com.turfbook.backend.dto.SubscriptionEditRequest;
 import com.turfbook.backend.dto.SubscriptionPage;
 import com.turfbook.backend.dto.SubscriptionPlan;
 import com.turfbook.backend.dto.UpdatePlanRequest;
+import com.turfbook.backend.dto.VenueSubscriptionPage;
 import com.turfbook.backend.dto.VenueSubscriptionView;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.subscription.SubscriptionService;
@@ -66,6 +67,13 @@ public class AdminSubscriptionController implements AdminSubscriptionsApi {
                                                                    Integer page, Integer size) {
         return ResponseEntity.ok(subscriptionService.adminListSubscriptions(
                 venueId, ownerId, status, page != null ? page : 0, size != null ? size : 20));
+    }
+
+    @Override
+    public ResponseEntity<VenueSubscriptionPage> adminListVenueSubscriptions(String q, String status,
+                                                                             Integer page, Integer size) {
+        return ResponseEntity.ok(subscriptionService.adminListVenueSubscriptions(
+                q, status, page != null ? page : 0, size != null ? size : 15));
     }
 
     @Override

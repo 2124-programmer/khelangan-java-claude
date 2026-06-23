@@ -24,6 +24,9 @@ public interface SubscriptionRepository extends JpaRepository<SubscriptionEntity
     /** Full history for a venue, newest first. */
     List<SubscriptionEntity> findByVenueOrderByIdDesc(VenueEntity venue);
 
+    /** Whether a venue has ever had any subscription (used to distinguish EXPIRED from NONE). */
+    boolean existsByVenue(VenueEntity venue);
+
     /** An owner's subscriptions in the given statuses (across all their venues). */
     List<SubscriptionEntity> findByOwner_IdAndStatusIn(Long ownerId, List<SubscriptionStatus> statuses);
 

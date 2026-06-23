@@ -1750,7 +1750,9 @@ components:
 
     VenueSubscriptionView:
       type: object
-      description: Owner/admin view of a venue's subscription state, usage, and recent history.
+      description: >
+        Owner/admin view of a venue's subscription state, usage, and recent history.
+        The venue / owner / timeline blocks are populated only on the admin detail endpoint.
       properties:
         current:
           allOf:
@@ -1768,6 +1770,93 @@ components:
           allOf:
             - $ref: '#/components/schemas/SubscriptionChangeRequest'
           nullable: true
+        venue:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionVenueRef'
+          nullable: true
+        owner:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionOwnerRef'
+          nullable: true
+        timeline:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionTimeline'
+          nullable: true
+
+    SubscriptionVenueRef:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        city: { type: string, nullable: true }
+        courtCount: { type: integer }
+        registeredAt: { type: string, format: date-time, nullable: true }
+        approvedAt: { type: string, format: date-time, nullable: true }
+
+    SubscriptionOwnerRef:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        mobile: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+
+    StageKey:
+      type: string
+      enum: [REGISTERED, APPROVED, TRIAL_ACTIVATED, SUBSCRIPTION]
+    StageState:
+      type: string
+      enum: [COMPLETED, LIVE, PENDING]
+    TimelineStage:
+      type: object
+      properties:
+        key: { $ref: '#/components/schemas/StageKey' }
+        label: { type: string }
+        occurredAt: { type: string, format: date-time, nullable: true }
+        state: { $ref: '#/components/schemas/StageState' }
+    SubscriptionTimeline:
+      type: object
+      properties:
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineStage'
+        liveStageKey:
+          allOf:
+            - $ref: '#/components/schemas/StageKey'
+          nullable: true
+
+    VenueSubscriptionRow:
+      type: object
+      description: One row in the admin venue-subscription table.
+      properties:
+        venueId: { type: integer, format: int64 }
+        venueName: { type: string }
+        venueCity: { type: string, nullable: true }
+        ownerName: { type: string }
+        ownerMobile: { type: string, nullable: true }
+        currentPlanCode: { type: string, nullable: true }
+        currentPlanName: { type: string, nullable: true }
+        currentStatus:
+          type: string
+          description: ACTIVE, TRIAL, EXPIRING, EXPIRED, or NONE (row-level rollup)
+        endDate: { type: string, format: date-time, nullable: true }
+        courtsUsed: { type: integer }
+        courtLimit: { type: integer, nullable: true }
+        pendingRequestId: { type: integer, format: int64, nullable: true }
+        pendingCurrentPlanName: { type: string, nullable: true }
+        pendingRequestedPlanName: { type: string, nullable: true }
+    VenueSubscriptionPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueSubscriptionRow'
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
 
     SubscriptionPage:
       type: object
@@ -3894,6 +3983,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Subscription'
+
+  /api/v1/admin/venue-subscriptions:
+    get:
+      tags: [AdminSubscriptions]
+      summary: Searchable, paginated table of every venue's current subscription (Admin)
+      operationId: adminListVenueSubscriptions
+      parameters:
+        - name: q
+          in: query
+          description: Search by venue name, city, owner name, or owner mobile.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            default: ALL
+            description: ALL, ACTIVE, TRIAL, EXPIRING, or EXPIRED
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 15
+      responses:
+        '200':
+          description: Page of venue-subscription rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionPage'
 
   /api/v1/admin/venues/{venueId}/subscription:
     get:

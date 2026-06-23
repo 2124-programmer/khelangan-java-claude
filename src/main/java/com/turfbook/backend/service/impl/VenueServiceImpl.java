@@ -59,6 +59,7 @@ public class VenueServiceImpl implements VenueService {
     private final VenueApprovalCommentRepository approvalCommentRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final SubscriptionDateCalculator subscriptionDates;
+    private final VenueLifecycleEventRepository lifecycleEventRepository;
 
     /** Venues at/below this court count submit for approval free (Starter tier defaulted). */
     private static final int FREE_COURT_THRESHOLD = 2;
@@ -263,12 +264,17 @@ public class VenueServiceImpl implements VenueService {
             throw new IllegalArgumentException("Comments are required when sending a venue back for changes.");
         }
 
+        // Stamp the first-approval moment (drives the lifecycle timeline's "Approved" milestone).
+        if (newStatus == VenueEntity.VenueStatus.LIVE && venue.getApprovedAt() == null) {
+            venue.setApprovedAt(subscriptionDates.now());
+        }
         venue.setStatus(newStatus);
         venue = venueRepository.save(venue);
 
         if (newStatus == VenueEntity.VenueStatus.LIVE && oldStatus == VenueEntity.VenueStatus.PENDING) {
             addComment(venue, VenueApprovalCommentEntity.Action.APPROVED,
                     VenueApprovalCommentEntity.AuthorRole.ADMIN, request.getRejectionReason());
+            recordLifecycle(venue, VenueLifecycleEventEntity.Type.APPROVED, null);
             // Auto-start the 30-day trial (Starter for ≤2 courts, else the committed tier) → venue goes live.
             subscriptionGate.startTrialForApprovedVenue(venue.getId());
             notificationService.createNotification(
@@ -430,6 +436,20 @@ public class VenueServiceImpl implements VenueService {
         dto.setIntendedPlanCode(venue.getIntendedPlanCode() != null ? venue.getIntendedPlanCode().name() : null);
         dto.setCommentHistory(buildCommentDtos(venue));
         return dto;
+    }
+
+    /** Append a lifecycle audit event (best-effort; never blocks the main flow). */
+    private void recordLifecycle(VenueEntity venue, VenueLifecycleEventEntity.Type type, String meta) {
+        try {
+            lifecycleEventRepository.save(VenueLifecycleEventEntity.builder()
+                    .venue(venue)
+                    .type(type)
+                    .occurredAt(subscriptionDates.now())
+                    .meta(meta)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to record lifecycle event {} for venue {}: {}", type, venue.getId(), e.getMessage());
+        }
     }
 
     /** Append an approval-thread entry for a venue. */
