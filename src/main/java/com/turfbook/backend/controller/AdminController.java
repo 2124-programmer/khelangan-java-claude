@@ -72,12 +72,17 @@ public class AdminController implements AdminApi {
     // ─── Venues ───────────────────────────────────────────────────────────
 
     @Override
-    public ResponseEntity<VenueSummaryPage> adminListVenues(Integer page, Integer size, String status) {
-        log.info("AdminController.adminListVenues() called - status={}", status);
+    public ResponseEntity<VenueSummaryPage> adminListVenues(Integer page, Integer size, String status, String q) {
+        log.info("AdminController.adminListVenues() called - status={}, q={}", status, q);
         return ResponseEntity.ok(venueService.adminListVenues(
                 page != null ? page : 0,
                 size != null ? size : 20,
-                status));
+                status, q));
+    }
+
+    @Override
+    public ResponseEntity<VenueCounts> adminVenueCounts() {
+        return ResponseEntity.ok(venueService.adminVenueCounts());
     }
 
     @Override

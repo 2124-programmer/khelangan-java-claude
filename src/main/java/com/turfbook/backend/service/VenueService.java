@@ -18,7 +18,9 @@ public interface VenueService {
 
     VenueSummaryPage listOwnerVenues(Long ownerId, int page, int size);
 
-    VenueSummaryPage adminListVenues(int page, int size, String status);
+    VenueSummaryPage adminListVenues(int page, int size, String status, String q);
+
+    VenueCounts adminVenueCounts();
 
     AdminVenueDetailDto adminGetVenue(Long id);
 

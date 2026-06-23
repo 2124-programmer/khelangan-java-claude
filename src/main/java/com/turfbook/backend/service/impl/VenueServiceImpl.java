@@ -263,6 +263,15 @@ public class VenueServiceImpl implements VenueService {
         if (newStatus == VenueEntity.VenueStatus.CHANGES_REQUESTED && !StringUtils.hasText(request.getRejectionReason())) {
             throw new IllegalArgumentException("Comments are required when sending a venue back for changes.");
         }
+        // Centralized transition guard — illegal admin transitions are rejected (409).
+        if (oldStatus != newStatus && !isAllowedAdminTransition(oldStatus, newStatus)) {
+            throw new ConflictException(String.format(
+                    "Cannot move a %s venue to %s.", oldStatus, newStatus));
+        }
+
+        boolean approving = newStatus == VenueEntity.VenueStatus.LIVE
+                && (oldStatus == VenueEntity.VenueStatus.PENDING || oldStatus == VenueEntity.VenueStatus.CHANGES_REQUESTED);
+        boolean relisting = newStatus == VenueEntity.VenueStatus.LIVE && oldStatus == VenueEntity.VenueStatus.SUSPENDED;
 
         // Stamp the first-approval moment (drives the lifecycle timeline's "Approved" milestone).
         if (newStatus == VenueEntity.VenueStatus.LIVE && venue.getApprovedAt() == null) {
@@ -271,7 +280,7 @@ public class VenueServiceImpl implements VenueService {
         venue.setStatus(newStatus);
         venue = venueRepository.save(venue);
 
-        if (newStatus == VenueEntity.VenueStatus.LIVE && oldStatus == VenueEntity.VenueStatus.PENDING) {
+        if (approving) {
             addComment(venue, VenueApprovalCommentEntity.Action.APPROVED,
                     VenueApprovalCommentEntity.AuthorRole.ADMIN, request.getRejectionReason());
             recordLifecycle(venue, VenueLifecycleEventEntity.Type.APPROVED, null);
@@ -281,6 +290,32 @@ public class VenueServiceImpl implements VenueService {
                     venue.getOwner(),
                     "Venue Approved!",
                     String.format("Your venue '%s' has been approved and is now live on TurfBook.", venue.getName()),
+                    NotificationEntity.NotificationType.SYSTEM
+            );
+        } else if (relisting) {
+            // Re-list a previously unlisted venue → recompute live-gating from its current subscription.
+            subscriptionGate.recomputeVenueLiveFlag(venue.getId());
+            notificationService.createNotification(
+                    venue.getOwner(),
+                    "Venue Re-listed",
+                    String.format("Your venue '%s' is live again on TurfBook.", venue.getName()),
+                    NotificationEntity.NotificationType.SYSTEM
+            );
+        } else if (newStatus == VenueEntity.VenueStatus.SUSPENDED) {
+            // Unlist an approved venue → hidden from players (status gate) until re-listed.
+            subscriptionGate.recomputeVenueLiveFlag(venue.getId());
+            notificationService.createNotification(
+                    venue.getOwner(),
+                    "Venue Unlisted",
+                    String.format("Your venue '%s' has been unlisted and is no longer visible to players.", venue.getName()),
+                    NotificationEntity.NotificationType.SYSTEM
+            );
+        } else if (newStatus == VenueEntity.VenueStatus.PENDING && oldStatus == VenueEntity.VenueStatus.REJECTED) {
+            // Reconsider a rejected venue → back into the moderation queue.
+            notificationService.createNotification(
+                    venue.getOwner(),
+                    "Venue Under Review",
+                    String.format("Your venue '%s' is being reconsidered and is back under review.", venue.getName()),
                     NotificationEntity.NotificationType.SYSTEM
             );
         } else if (newStatus == VenueEntity.VenueStatus.REJECTED) {
@@ -383,23 +418,53 @@ public class VenueServiceImpl implements VenueService {
         return page1;
     }
 
+    /** Every status that counts as "in the pipeline" (admin registry excludes unsubmitted DRAFTs). */
+    private static final List<VenueEntity.VenueStatus> NON_DRAFT_STATUSES = List.of(
+            VenueEntity.VenueStatus.PENDING, VenueEntity.VenueStatus.CHANGES_REQUESTED,
+            VenueEntity.VenueStatus.LIVE, VenueEntity.VenueStatus.SUSPENDED,
+            VenueEntity.VenueStatus.REJECTED);
+    private static final List<VenueEntity.VenueStatus> APPROVED_STATUSES = List.of(
+            VenueEntity.VenueStatus.LIVE, VenueEntity.VenueStatus.SUSPENDED);
+
+    /** Map a tab keyword (ALL/PENDING/CHANGES_REQUESTED/APPROVED/REJECTED or raw status) to a status set. */
+    private List<VenueEntity.VenueStatus> statusesForTab(String status) {
+        if (!StringUtils.hasText(status) || "ALL".equalsIgnoreCase(status)) return NON_DRAFT_STATUSES;
+        String key = status.trim().toUpperCase();
+        return switch (key) {
+            case "APPROVED" -> APPROVED_STATUSES;
+            case "PENDING" -> List.of(VenueEntity.VenueStatus.PENDING);
+            case "CHANGES_REQUESTED" -> List.of(VenueEntity.VenueStatus.CHANGES_REQUESTED);
+            case "REJECTED" -> List.of(VenueEntity.VenueStatus.REJECTED);
+            default -> {
+                try {
+                    yield List.of(VenueEntity.VenueStatus.valueOf(key));
+                } catch (IllegalArgumentException e) {
+                    yield NON_DRAFT_STATUSES;
+                }
+            }
+        };
+    }
+
     @Override
     @Transactional(readOnly = true)
-    public VenueSummaryPage adminListVenues(int page, int size, String status) {
-        log.info("VenueService.adminListVenues() called - status={}", status);
+    public VenueSummaryPage adminListVenues(int page, int size, String status, String q) {
+        log.info("VenueService.adminListVenues() called - status={}, q={}", status, q);
         Pageable pageable = PageRequest.of(page, size);
-        Page<VenueEntity> entityPage;
-        if (StringUtils.hasText(status)) {
-            try {
-                VenueEntity.VenueStatus venueStatus = VenueEntity.VenueStatus.valueOf(status.toUpperCase());
-                entityPage = venueRepository.findByStatus(venueStatus, pageable);
-            } catch (IllegalArgumentException e) {
-                entityPage = venueRepository.findAll(pageable);
-            }
-        } else {
-            entityPage = venueRepository.findAll(pageable);
-        }
+        String search = StringUtils.hasText(q) ? q.trim() : null;
+        Page<VenueEntity> entityPage = venueRepository.adminSearch(statusesForTab(status), search, pageable);
         return toVenueSummaryPage(entityPage);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public VenueCounts adminVenueCounts() {
+        VenueCounts c = new VenueCounts();
+        c.setPending((int) venueRepository.countByStatus(VenueEntity.VenueStatus.PENDING));
+        c.setChangesRequested((int) venueRepository.countByStatus(VenueEntity.VenueStatus.CHANGES_REQUESTED));
+        c.setApproved((int) venueRepository.countByStatusIn(APPROVED_STATUSES));
+        c.setRejected((int) venueRepository.countByStatus(VenueEntity.VenueStatus.REJECTED));
+        c.setAll((int) venueRepository.countByStatusIn(NON_DRAFT_STATUSES));
+        return c;
     }
 
     @Override
@@ -429,13 +494,118 @@ public class VenueServiceImpl implements VenueService {
             history.setLiveVenues(0L);
         }
 
+        List<VenueApprovalComment> comments = buildCommentDtos(venue);
+
         AdminVenueDetailDto dto = new AdminVenueDetailDto();
         dto.setVenue(venueMapper.toDetailDto(venue));
         dto.setOwner(ownerDto);
         dto.setOwnerHistory(history);
         dto.setIntendedPlanCode(venue.getIntendedPlanCode() != null ? venue.getIntendedPlanCode().name() : null);
-        dto.setCommentHistory(buildCommentDtos(venue));
+        dto.setCommentHistory(comments);
+
+        // Derived, server-authoritative moderation state (client never re-derives).
+        VenueEntity.VenueStatus s = venue.getStatus();
+        dto.setApprovalStatus(approvalStatusOf(s));
+        dto.setListingStatus(listingStatusOf(s));
+        dto.setStatusLabel(statusLabelOf(s));
+        dto.setStatusTone(statusToneOf(s));
+        dto.setAvailableActions(availableActionsOf(s));
+        dto.setRejectionReason(latestCommentText(comments, "REJECTED"));
+        dto.setChangeNotes(latestCommentText(comments, "CHANGES_REQUESTED"));
+        dto.setSubmittedAt(venue.getCreatedAt() != null ? venue.getCreatedAt().atOffset(ZoneOffset.UTC) : null);
+        dto.setCompleteness(buildCompleteness(venue, owner));
         return dto;
+    }
+
+    /** Admin moderation transitions allowed from {@code from}. DRAFT→PENDING is owner-only (submit). */
+    private boolean isAllowedAdminTransition(VenueEntity.VenueStatus from, VenueEntity.VenueStatus to) {
+        return switch (from) {
+            case PENDING, CHANGES_REQUESTED -> to == VenueEntity.VenueStatus.LIVE
+                    || to == VenueEntity.VenueStatus.REJECTED
+                    || to == VenueEntity.VenueStatus.CHANGES_REQUESTED;
+            case REJECTED -> to == VenueEntity.VenueStatus.PENDING;
+            case LIVE -> to == VenueEntity.VenueStatus.SUSPENDED;
+            case SUSPENDED -> to == VenueEntity.VenueStatus.LIVE;
+            case DRAFT -> to == VenueEntity.VenueStatus.PENDING;
+        };
+    }
+
+    // ─── Derived moderation state (single source of truth) ───────────────────
+
+    private String approvalStatusOf(VenueEntity.VenueStatus s) {
+        return switch (s) {
+            case LIVE, SUSPENDED -> "APPROVED";
+            case PENDING, DRAFT -> "PENDING";
+            case CHANGES_REQUESTED -> "CHANGES_REQUESTED";
+            case REJECTED -> "REJECTED";
+        };
+    }
+
+    private String listingStatusOf(VenueEntity.VenueStatus s) {
+        return switch (s) {
+            case LIVE -> "LIVE";
+            case SUSPENDED -> "UNLISTED";
+            default -> "NONE";
+        };
+    }
+
+    private String statusLabelOf(VenueEntity.VenueStatus s) {
+        return switch (s) {
+            case LIVE -> "Live";
+            case SUSPENDED -> "Unlisted";
+            case PENDING -> "Pending";
+            case CHANGES_REQUESTED, DRAFT -> "Draft";
+            case REJECTED -> "Rejected";
+        };
+    }
+
+    private String statusToneOf(VenueEntity.VenueStatus s) {
+        return switch (s) {
+            case LIVE -> "GREEN";
+            case PENDING -> "AMBER";
+            case CHANGES_REQUESTED -> "BLUE";
+            case REJECTED -> "RED";
+            case SUSPENDED, DRAFT -> "GRAY";
+        };
+    }
+
+    private List<String> availableActionsOf(VenueEntity.VenueStatus s) {
+        return switch (s) {
+            case PENDING, CHANGES_REQUESTED -> List.of("SEND_BACK", "REJECT", "APPROVE");
+            case LIVE -> List.of("UNLIST", "EDIT");
+            case SUSPENDED -> List.of("RELIST", "EDIT");
+            case REJECTED -> List.of("RECONSIDER");
+            case DRAFT -> List.of();
+        };
+    }
+
+    /** Latest comment text for a given action (newest wins); null if none. */
+    private String latestCommentText(List<VenueApprovalComment> comments, String action) {
+        String text = null;
+        for (VenueApprovalComment c : comments) {
+            if (action.equals(c.getAction()) && StringUtils.hasText(c.getComment())) {
+                text = c.getComment(); // comments are oldest-first, so the last match is newest
+            }
+        }
+        return text;
+    }
+
+    private VenueCompleteness buildCompleteness(VenueEntity venue, UserEntity owner) {
+        long courts = courtRepository.countByVenue(venue);
+        boolean photos = venue.getPhotos() != null && !venue.getPhotos().isEmpty();
+        boolean address = StringUtils.hasText(venue.getAddress()) && StringUtils.hasText(venue.getPincode());
+        boolean phone = StringUtils.hasText(venue.getContactPhone())
+                || (owner != null && StringUtils.hasText(owner.getPhone()));
+
+        List<VenueCompletenessCheck> checks = List.of(
+                new VenueCompletenessCheck().key("PHOTOS").label("Photos added").done(photos),
+                new VenueCompletenessCheck().key("COURT").label("At least one court").done(courts >= 1),
+                new VenueCompletenessCheck().key("ADDRESS").label("Address complete").done(address),
+                new VenueCompletenessCheck().key("PHONE").label("Contact phone").done(phone));
+        long done = checks.stream().filter(VenueCompletenessCheck::getDone).count();
+        return new VenueCompleteness()
+                .percent((int) Math.round(100.0 * done / checks.size()))
+                .checks(checks);
     }
 
     /** Append a lifecycle audit event (best-effort; never blocks the main flow). */

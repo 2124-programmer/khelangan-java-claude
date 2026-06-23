@@ -51,6 +51,21 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
             @Param("q") String q,
             @Param("excludeStatus") VenueEntity.VenueStatus excludeStatus);
 
+    /**
+     * Admin Venues screen: filter by a set of statuses (a tab maps to one or more) and search
+     * across venue name, owner name, address, and city. Newest-updated first.
+     */
+    @Query("SELECT v FROM VenueEntity v WHERE v.status IN :statuses AND " +
+           "(:q IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(v.owner.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(v.address) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :q, '%'))) " +
+           "ORDER BY v.createdAt DESC")
+    Page<VenueEntity> adminSearch(
+            @Param("statuses") List<VenueEntity.VenueStatus> statuses,
+            @Param("q") String q,
+            Pageable pageable);
+
     long countByStatus(VenueEntity.VenueStatus status);
 
     @Query("SELECT COUNT(v) FROM VenueEntity v WHERE v.owner = :owner AND v.status = :liveStatus")

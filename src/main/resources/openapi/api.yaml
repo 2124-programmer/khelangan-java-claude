@@ -613,6 +613,8 @@ components:
       description: >-
         Full venue listing (same data players see) plus ADMIN-only owner context.
         Returned by GET /api/v1/admin/venues/{id} for venues in any status.
+        statusLabel/statusTone/availableActions are derived server-side from the
+        venue's status so the client never re-derives moderation rules.
       properties:
         venue:
           $ref: '#/components/schemas/VenueDetailDto'
@@ -628,6 +630,68 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/VenueApprovalComment'
+        approvalStatus:
+          type: string
+          description: PENDING, CHANGES_REQUESTED, APPROVED, or REJECTED (derived from venue status).
+        listingStatus:
+          type: string
+          description: LIVE, UNLISTED, or NONE (derived from venue status).
+        statusLabel:
+          type: string
+          description: Display label — Live / Unlisted / Pending / Draft / Rejected.
+        statusTone:
+          type: string
+          description: GREEN, AMBER, BLUE, RED, or GRAY.
+        availableActions:
+          type: array
+          description: Moderation actions allowed from the current status.
+          items:
+            type: string
+            description: APPROVE, REJECT, SEND_BACK, RECONSIDER, UNLIST, RELIST, or EDIT.
+        rejectionReason:
+          type: string
+          nullable: true
+          description: Latest rejection note (when REJECTED).
+        changeNotes:
+          type: string
+          nullable: true
+          description: Latest send-back note (when CHANGES_REQUESTED).
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completeness:
+          $ref: '#/components/schemas/VenueCompleteness'
+
+    VenueCompleteness:
+      type: object
+      properties:
+        percent:
+          type: integer
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueCompletenessCheck'
+    VenueCompletenessCheck:
+      type: object
+      properties:
+        key:
+          type: string
+          description: PHOTOS, COURT, ADDRESS, or PHONE
+        label:
+          type: string
+        done:
+          type: boolean
+
+    VenueCounts:
+      type: object
+      description: Per-tab venue counts for the admin Venues screen badges.
+      properties:
+        all: { type: integer }
+        pending: { type: integer }
+        changesRequested: { type: integer }
+        approved: { type: integer }
+        rejected: { type: integer }
 
     VenueSummaryPage:
       type: object
@@ -2691,7 +2755,7 @@ paths:
   /api/v1/admin/venues:
     get:
       tags: [Admin]
-      summary: List all venues (Admin)
+      summary: List/search venues (Admin — unified registry + moderation queue)
       operationId: adminListVenues
       parameters:
         - name: page
@@ -2706,6 +2770,12 @@ paths:
             default: 20
         - name: status
           in: query
+          description: ALL, PENDING, CHANGES_REQUESTED, APPROVED, REJECTED (or a raw VenueStatus). ALL/blank excludes DRAFT.
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: Search across venue name, owner name, address, and city.
           schema:
             type: string
       responses:
@@ -2715,6 +2785,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VenueSummaryPage'
+
+  /api/v1/admin/venues/counts:
+    get:
+      tags: [Admin]
+      summary: Per-tab venue counts (Admin)
+      operationId: adminVenueCounts
+      responses:
+        '200':
+          description: Venue counts per tab
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueCounts'
 
   /api/v1/admin/venues/{id}:
     get:

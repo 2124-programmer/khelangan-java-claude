@@ -349,7 +349,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     @Transactional(readOnly = true)
     public List<SubscriptionChangeRequest> adminListChangeRequests(String status) {
         SubscriptionChangeRequestEntity.Status s = parseChangeStatus(status);
-        return mapper.toChangeRequestDtos(changeRequestRepository.findByStatusOrderByCreatedAtAsc(s));
+        return mapper.toChangeRequestDtos(changeRequestRepository.findByStatusWithRefs(s));
     }
 
     @Override
