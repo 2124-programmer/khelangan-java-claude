@@ -140,4 +140,14 @@ public class NotificationServiceImpl implements NotificationService {
         notificationRepository.save(notification);
         log.info("NotificationService.createNotification() completed - userId={}, title={}", user.getId(), title);
     }
+
+    @Override
+    @Transactional
+    public void notifyAdmins(String title, String body, NotificationEntity.NotificationType type) {
+        var admins = userRepository.findByRole(UserEntity.Role.ADMIN);
+        for (UserEntity admin : admins) {
+            createNotification(admin, title, body, type);
+        }
+        log.info("NotificationService.notifyAdmins() fanned '{}' out to {} admin(s)", title, admins.size());
+    }
 }

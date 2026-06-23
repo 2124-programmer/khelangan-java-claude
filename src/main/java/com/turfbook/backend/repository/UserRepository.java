@@ -28,6 +28,9 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
     long countByRole(UserEntity.Role role);
 
+    /** All users of a role — used to fan a notification out to every admin. */
+    java.util.List<UserEntity> findByRole(UserEntity.Role role);
+
     long countByRoleAndCreatedAtAfter(UserEntity.Role role, LocalDateTime after);
 
     @Query("SELECT u FROM UserEntity u WHERE " +

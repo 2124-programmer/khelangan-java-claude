@@ -395,6 +395,13 @@ public class VenueServiceImpl implements VenueService {
                         : VenueApprovalCommentEntity.Action.SUBMITTED,
                 VenueApprovalCommentEntity.AuthorRole.OWNER, null);
 
+        // Surface the pending approval to admins.
+        notificationService.notifyAdmins(
+                "New venue pending approval",
+                String.format("%s submitted '%s' for approval.",
+                        venue.getOwner() != null ? venue.getOwner().getName() : "An owner", venue.getName()),
+                NotificationEntity.NotificationType.SYSTEM);
+
         VenueDetailDto dto = venueMapper.toDetailDto(venue);
         dto.setApprovalComments(buildCommentDtos(venue));
         return dto;

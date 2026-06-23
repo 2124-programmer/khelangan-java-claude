@@ -25,6 +25,9 @@ public interface NotificationService {
     void createNotification(UserEntity user, String title, String body,
                             NotificationEntity.NotificationType type, String referenceId, String referenceType);
 
+    /** Fan a notification out to every ADMIN (e.g. new venue submission, dispute, subscription request). */
+    void notifyAdmins(String title, String body, NotificationEntity.NotificationType type);
+
     /** Marks all unread notifications for a given user + referenceId as read. */
     void dismissNotificationsForBooking(UserEntity user, String referenceId);
 }

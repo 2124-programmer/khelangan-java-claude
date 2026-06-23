@@ -120,6 +120,13 @@ public class DisputeServiceImpl implements DisputeService {
                 NotificationEntity.NotificationType.SYSTEM
         );
 
+        // Surface it to the admins who triage disputes.
+        notificationService.notifyAdmins(
+                "New dispute raised",
+                String.format("%s vs %s at %s — %s",
+                        player.getName(), owner.getName(), booking.getVenue().getName(), category.name()),
+                NotificationEntity.NotificationType.SYSTEM);
+
         log.info("DisputeService.createDispute() completed - disputeId={}", dispute.getId());
         return disputeMapper.toDto(dispute);
     }

@@ -456,6 +456,15 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 .build();
         entity = changeRequestRepository.save(entity);
         log.info("Owner {} requested upgrade of venue {} to plan {}", ownerId, venueId, plan.getCode());
+
+        // Surface the request to admins (the dashboard "Subscription Requests" queue).
+        notificationService.notifyAdmins(
+                "New subscription request",
+                String.format("%s requested '%s' for venue '%s'.",
+                        venue.getOwner() != null ? venue.getOwner().getName() : "An owner",
+                        plan.getName(), venue.getName()),
+                NotificationEntity.NotificationType.SYSTEM);
+
         return mapper.toChangeRequestDto(entity);
     }
 
