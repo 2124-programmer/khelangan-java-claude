@@ -40,11 +40,29 @@ public class UserEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 255)
+    /**
+     * Original sign-up email — kept for history and never nulled. Uniqueness moved to
+     * {@link #activeEmail}; this column is intentionally NOT unique so a DELETED row can
+     * retain its address while a fresh sign-up reclaims it via {@code active_email}.
+     */
+    @Column(nullable = false, length = 255)
     private String email;
 
     @Column(nullable = false, length = 20)
     private String phone;
+
+    /**
+     * The address login/registration uniqueness is enforced against (nullable-UNIQUE).
+     * Equals {@link #email} for live accounts; NULL once the account is soft-DELETED so the
+     * email frees up for reuse. MySQL allows many NULLs, so deleted rows coexist with a new
+     * sign-up that claims the value. The unique index is created by the migration runner.
+     */
+    @Column(name = "active_email", length = 255)
+    private String activeEmail;
+
+    /** Phone counterpart of {@link #activeEmail} (nullable-UNIQUE). NULLed on soft-delete. */
+    @Column(name = "active_phone", length = 20)
+    private String activePhone;
 
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
@@ -100,6 +118,28 @@ public class UserEntity {
     @Column(name = "token_version", nullable = false)
     @Builder.Default
     private int tokenVersion = 0;
+
+    // ── Soft-delete (terminal) ─────────────────────────────────────────────
+    /** When the account was soft-deleted. Non-null ⇒ DELETED + read-only everywhere. */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    /** Admin who performed the deletion (actor id). */
+    @Column(name = "deleted_by")
+    private Long deletedBy;
+
+    @Column(name = "deleted_reason", length = 500)
+    private String deletedReason;
+
+    /** Cascade tallies captured at delete time, surfaced on the deletion banner. */
+    @Column(name = "deleted_venues_archived")
+    private Integer deletedVenuesArchived;
+
+    @Column(name = "deleted_bookings_cancelled")
+    private Integer deletedBookingsCancelled;
+
+    @Column(name = "deleted_subscriptions_voided")
+    private Integer deletedSubscriptionsVoided;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -69,8 +69,15 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         log.info("AuthService.register() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String email = request.getEmail().toLowerCase().trim();
+        String phone = request.getPhone() != null ? request.getPhone().trim() : null;
+        // Uniqueness is enforced against active_email/active_phone so freed (deleted/banned) identifiers
+        // behave correctly: a DELETED account's active_* is NULL and no longer collides.
+        if (userRepository.existsByActiveEmail(email)) {
             throw new ConflictException("Email already registered: " + request.getEmail());
+        }
+        if (phone != null && !phone.isEmpty() && userRepository.existsByActivePhone(phone)) {
+            throw new ConflictException("Phone number already registered: " + phone);
         }
 
         UserEntity.Role role;
@@ -85,8 +92,10 @@ public class AuthServiceImpl implements AuthService {
 
         UserEntity user = UserEntity.builder()
                 .name(request.getName())
-                .email(request.getEmail().toLowerCase().trim())
+                .email(email)
                 .phone(request.getPhone())
+                .activeEmail(email)
+                .activePhone(phone != null && !phone.isEmpty() ? phone : null)
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(role)
                 .build();
@@ -117,7 +126,7 @@ public class AuthServiceImpl implements AuthService {
         );
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        UserEntity user = userRepository.findByEmail(request.getEmail().toLowerCase().trim())
+        UserEntity user = userRepository.findByActiveEmail(request.getEmail().toLowerCase().trim())
                 .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (user.isBlocked()) {
@@ -145,7 +154,7 @@ public class AuthServiceImpl implements AuthService {
         response.setExpiresInSec(OTP_EXPIRY_SEC);
         response.setResendAfterSec(0);
 
-        Optional<UserEntity> userOpt = userRepository.findByEmail(email);
+        Optional<UserEntity> userOpt = userRepository.findByActiveEmail(email);
         if (userOpt.isEmpty()) {
             log.info("AuthService.sendOtp() - no account found for email={}", LogMaskUtil.maskEmail(email));
             response.setMaskedDestination("••••••••");
@@ -214,7 +223,7 @@ public class AuthServiceImpl implements AuthService {
         record.setUsed(true);
         otpRecordRepository.save(record);
 
-        UserEntity user = userRepository.findByEmail(email)
+        UserEntity user = userRepository.findByActiveEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("Account not found."));
         if (user.isBlocked()) {
             throw new UnauthorizedException("Your account has been blocked. Please contact support.");
@@ -308,7 +317,7 @@ public class AuthServiceImpl implements AuthService {
         MessageResponse generic = new MessageResponse();
         generic.setMessage("If an account with this email exists, a reset code has been sent.");
 
-        Optional<UserEntity> userOpt = userRepository.findByEmail(email);
+        Optional<UserEntity> userOpt = userRepository.findByActiveEmail(email);
         if (userOpt.isEmpty()) {
             return generic; // enumeration-safe: same response regardless
         }
@@ -380,9 +389,9 @@ public class AuthServiceImpl implements AuthService {
         // Issue a short-lived, single-use reset token
         String rawToken = generateSecureHex(32);
         passwordResetTokenRepository.deleteAllByUserId(
-                userRepository.findByEmail(email).map(UserEntity::getId).orElse(-1L));
+                userRepository.findByActiveEmail(email).map(UserEntity::getId).orElse(-1L));
 
-        UserEntity user = userRepository.findByEmail(email)
+        UserEntity user = userRepository.findByActiveEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("Account not found."));
         PasswordResetTokenEntity tokenEntity = PasswordResetTokenEntity.builder()
                 .userId(user.getId())

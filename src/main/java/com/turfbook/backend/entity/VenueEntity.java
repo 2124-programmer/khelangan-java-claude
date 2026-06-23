@@ -21,7 +21,9 @@ import java.util.Set;
 public class VenueEntity {
 
     public enum VenueStatus {
-        DRAFT, PENDING, LIVE, REJECTED, SUSPENDED, CHANGES_REQUESTED
+        DRAFT, PENDING, LIVE, REJECTED, SUSPENDED, CHANGES_REQUESTED,
+        /** Terminal: removed from the marketplace because the owner account was deleted. */
+        ARCHIVED
     }
 
     @Id
@@ -159,4 +161,13 @@ public class VenueEntity {
     /** When the venue was first approved (status → LIVE). Null until approved. Drives the lifecycle timeline. */
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
+
+    /**
+     * True when this venue was unlisted (LIVE → SUSPENDED) specifically because its OWNER was
+     * suspended/banned — not by a per-venue admin action. Owner reactivation relists exactly
+     * these venues, leaving venues an admin unlisted independently untouched.
+     */
+    @Column(name = "unlisted_by_owner", nullable = false)
+    @Builder.Default
+    private boolean unlistedByOwner = false;
 }

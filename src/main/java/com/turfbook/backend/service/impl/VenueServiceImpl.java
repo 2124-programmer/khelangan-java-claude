@@ -527,6 +527,7 @@ public class VenueServiceImpl implements VenueService {
             case LIVE -> to == VenueEntity.VenueStatus.SUSPENDED;
             case SUSPENDED -> to == VenueEntity.VenueStatus.LIVE;
             case DRAFT -> to == VenueEntity.VenueStatus.PENDING;
+            case ARCHIVED -> false; // terminal — only the owner-delete cascade sets ARCHIVED
         };
     }
 
@@ -538,6 +539,7 @@ public class VenueServiceImpl implements VenueService {
             case PENDING, DRAFT -> "PENDING";
             case CHANGES_REQUESTED -> "CHANGES_REQUESTED";
             case REJECTED -> "REJECTED";
+            case ARCHIVED -> "ARCHIVED";
         };
     }
 
@@ -556,6 +558,7 @@ public class VenueServiceImpl implements VenueService {
             case PENDING -> "Pending";
             case CHANGES_REQUESTED, DRAFT -> "Draft";
             case REJECTED -> "Rejected";
+            case ARCHIVED -> "Archived";
         };
     }
 
@@ -565,7 +568,7 @@ public class VenueServiceImpl implements VenueService {
             case PENDING -> "AMBER";
             case CHANGES_REQUESTED -> "BLUE";
             case REJECTED -> "RED";
-            case SUSPENDED, DRAFT -> "GRAY";
+            case SUSPENDED, DRAFT, ARCHIVED -> "GRAY";
         };
     }
 
@@ -575,7 +578,7 @@ public class VenueServiceImpl implements VenueService {
             case LIVE -> List.of("UNLIST", "EDIT");
             case SUSPENDED -> List.of("RELIST", "EDIT");
             case REJECTED -> List.of("RECONSIDER");
-            case DRAFT -> List.of();
+            case DRAFT, ARCHIVED -> List.of();
         };
     }
 

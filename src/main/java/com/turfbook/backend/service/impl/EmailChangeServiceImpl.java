@@ -64,7 +64,7 @@ public class EmailChangeServiceImpl implements EmailChangeService {
             throw new BadRequestException("New email is the same as your current email.");
         }
 
-        if (userRepository.existsByEmail(newEmail)) {
+        if (userRepository.existsByActiveEmail(newEmail)) {
             throw new ConflictException("This email address is already in use.");
         }
 
@@ -201,6 +201,7 @@ public class EmailChangeServiceImpl implements EmailChangeService {
 
         String oldEmail = user.getEmail();
         user.setEmail(entity.getNewEmail());
+        user.setActiveEmail(entity.getNewEmail()); // keep login/uniqueness column in sync
         user.setTokenVersion(user.getTokenVersion() + 1); // invalidate all existing sessions
         userRepository.save(user);
 

@@ -23,7 +23,9 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        UserEntity user = userRepository.findByEmail(email)
+        // Login authenticates against the active (non-deleted) email; soft-deleted accounts
+        // have active_email = NULL and therefore can never authenticate.
+        UserEntity user = userRepository.findByActiveEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
         return buildUserDetails(user);
     }

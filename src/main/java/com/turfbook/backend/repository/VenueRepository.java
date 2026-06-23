@@ -16,7 +16,21 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
 
     Page<VenueEntity> findByOwner(UserEntity owner, Pageable pageable);
 
+    /** All of an owner's venues (used by the owner-moderation cascade). */
+    List<VenueEntity> findByOwner(UserEntity owner);
+
     Page<VenueEntity> findByStatus(VenueEntity.VenueStatus status, Pageable pageable);
+
+    /**
+     * Batch per-owner venue aggregate for the Admin Owners list. One row per owner:
+     * [ownerId, totalVenues, liveVenues, avgRating]. ARCHIVED venues (deleted owners) are excluded
+     * from the live count but still counted in totalVenues for the record.
+     */
+    @Query("SELECT v.owner.id, COUNT(v), "
+            + "SUM(CASE WHEN v.status = 'LIVE' THEN 1 ELSE 0 END), "
+            + "AVG(v.ratingAverage) "
+            + "FROM VenueEntity v WHERE v.owner.id IN :ownerIds GROUP BY v.owner.id")
+    List<Object[]> aggregateByOwnerIds(@Param("ownerIds") java.util.Collection<Long> ownerIds);
 
     // A venue is shown to players only when approved (status LIVE) AND it holds an
     // active/trialing subscription (denormalized subscriptionActive flag). Ordering applies
@@ -65,6 +79,10 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
             @Param("statuses") List<VenueEntity.VenueStatus> statuses,
             @Param("q") String q,
             Pageable pageable);
+
+    /** Owners with at least one LIVE venue (Admin Owners KPI: "Active"). */
+    @Query("SELECT COUNT(DISTINCT v.owner.id) FROM VenueEntity v WHERE v.status = 'LIVE'")
+    long countDistinctOwnersWithLiveVenue();
 
     long countByStatus(VenueEntity.VenueStatus status);
 

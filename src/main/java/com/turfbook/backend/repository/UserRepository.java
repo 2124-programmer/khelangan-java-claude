@@ -18,6 +18,14 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
     boolean existsByEmail(String email);
 
+    // ── active_* are the uniqueness/login columns (see UserEntity.activeEmail) ──
+    /** Resolve a login/OTP/reset by the *active* email. DELETED accounts (active_email = NULL) never match. */
+    Optional<UserEntity> findByActiveEmail(String activeEmail);
+
+    boolean existsByActiveEmail(String activeEmail);
+
+    boolean existsByActivePhone(String activePhone);
+
     long countByRole(UserEntity.Role role);
 
     long countByRoleAndCreatedAtAfter(UserEntity.Role role, LocalDateTime after);

@@ -863,6 +863,151 @@ components:
         subject: { type: string, nullable: true }
         body: { type: string, minLength: 1 }
 
+    # ─── Admin Owners ─────────────────────────────────────────────────────────
+    OwnerStats:
+      type: object
+      properties:
+        totalOwners: { type: integer }
+        newThisWeek: { type: integer }
+        activeOwners: { type: integer }      # >=1 live venue
+        onboardingOwners: { type: integer }  # no live venue yet
+        flaggedCount: { type: integer }
+    OwnerRow:
+      type: object
+      properties:
+        ownerId: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+        status: { type: string, description: ACTIVE/SUSPENDED/BANNED/DELETED }
+        riskLevel: { type: string, description: NONE/LOW/MEDIUM/HIGH }
+        riskReason: { type: string, nullable: true }
+        totalVenues: { type: integer }
+        liveVenues: { type: integer }
+        grossBookingValue: { type: integer }  # informational transaction volume
+        rating: { type: number, nullable: true }
+        lastActiveAt: { type: string, format: date-time, nullable: true }
+        joinedAt: { type: string, format: date-time, nullable: true }
+    OwnerPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/OwnerRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+    OwnerStatsBlock:
+      type: object
+      properties:
+        totalVenues: { type: integer }
+        liveVenues: { type: integer }
+        grossBookingValue: { type: integer }
+        bookingCount: { type: integer }
+        rating: { type: number, nullable: true }
+        ownerCancellationRatePct: { type: integer }
+        disputeCount: { type: integer }
+        refundRatePct: { type: integer }
+    OwnerSuspensionInfo:
+      type: object
+      properties:
+        reason: { type: string, nullable: true }
+        until: { type: string, format: date, nullable: true }
+    OwnerDeletionInfo:
+      type: object
+      properties:
+        deletedAt: { type: string, format: date-time, nullable: true }
+        deletedByName: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        venuesArchived: { type: integer, nullable: true }
+        bookingsCancelled: { type: integer, nullable: true }
+        subscriptionsVoided: { type: integer, nullable: true }
+    OwnerAdminDetail:
+      type: object
+      properties:
+        ownerId: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+        status: { type: string }
+        riskLevel: { type: string }
+        riskReason: { type: string, nullable: true }
+        joinedAt: { type: string, format: date-time, nullable: true }
+        lastActiveAt: { type: string, format: date-time, nullable: true }
+        stats: { $ref: '#/components/schemas/OwnerStatsBlock' }
+        suspension:
+          allOf:
+            - $ref: '#/components/schemas/OwnerSuspensionInfo'
+          nullable: true
+        deletion:
+          allOf:
+            - $ref: '#/components/schemas/OwnerDeletionInfo'
+          nullable: true
+        availableActions:
+          type: array
+          items: { type: string }
+    OwnerBookingRow:
+      type: object
+      properties:
+        bookingId: { type: integer, format: int64 }
+        venueName: { type: string }
+        playerName: { type: string }
+        date: { type: string, format: date, nullable: true }
+        slotLabel: { type: string }
+        amount: { type: integer }
+        status: { type: string }
+    OwnerBookingPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/OwnerBookingRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+    OwnerReasonBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    OwnerSuspendBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+        until: { type: string, format: date, nullable: true }
+    OwnerBanBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+        cancelUpcomingBookings: { type: boolean, default: false }
+    OwnerVerificationBody:
+      type: object
+      required: [channel, verified]
+      properties:
+        channel: { type: string, description: EMAIL or PHONE }
+        verified: { type: boolean }
+    OwnerMessageBody:
+      type: object
+      required: [channels, body]
+      properties:
+        channels:
+          type: array
+          items: { type: string, description: IN_APP/EMAIL/SMS }
+          minItems: 1
+        subject: { type: string, nullable: true }
+        body: { type: string, minLength: 1 }
+
     VenueSummaryPage:
       type: object
       properties:
@@ -3083,6 +3228,198 @@ paths:
         - { name: size, in: query, schema: { type: integer, default: 20 } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAuditPage' } } } }
+
+  # ─── Admin Owners ──────────────────────────────────────────────────────────
+  /api/v1/admin/owners:
+    get:
+      tags: [AdminOwners]
+      summary: List/search venue owners (scaled)
+      operationId: listAdminOwners
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - name: segment
+          in: query
+          schema: { type: string, default: ALL, description: ALL/NEW/ONBOARDING/ACTIVE/DORMANT/FLAGGED/RESTRICTED }
+        - name: sort
+          in: query
+          schema: { type: string, default: RECENTLY_ACTIVE, description: MOST_VENUES/HIGHEST_REVENUE/RECENTLY_JOINED/RECENTLY_ACTIVE/RATING/NAME_ASC }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Page of owners
+          content: { application/json: { schema: { $ref: '#/components/schemas/OwnerPage' } } }
+
+  /api/v1/admin/owners/stats:
+    get:
+      tags: [AdminOwners]
+      summary: Owner KPI stats
+      operationId: getAdminOwnerStats
+      responses:
+        '200':
+          description: Owner stats
+          content: { application/json: { schema: { $ref: '#/components/schemas/OwnerStats' } } }
+
+  /api/v1/admin/owners/{ownerId}:
+    get:
+      tags: [AdminOwners]
+      summary: Owner admin detail (status-aware)
+      operationId: getOwnerDetail
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Owner detail
+          content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } }
+        '404': { description: Not found }
+    delete:
+      tags: [AdminOwners]
+      summary: Soft-delete an owner (cascade + release email + phone)
+      operationId: deleteOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OwnerReasonBody' } } }
+      responses:
+        '200': { description: Deleted, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } } }
+        '403': { description: Caller lacks delete capability }
+
+  /api/v1/admin/owners/{ownerId}/venues:
+    get:
+      tags: [AdminOwners]
+      summary: Owner's venue portfolio (reuses VenueSummaryDto)
+      operationId: getOwnerVenues
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/VenueSummaryPage' } } } }
+
+  /api/v1/admin/owners/{ownerId}/subscriptions:
+    get:
+      tags: [AdminOwners]
+      summary: Owner's subscriptions (reuses VenueSubscriptionRow)
+      operationId: getOwnerSubscriptions
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VenueSubscriptionRow' }
+
+  /api/v1/admin/owners/{ownerId}/bookings:
+    get:
+      tags: [AdminOwners]
+      operationId: getOwnerBookings
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerBookingPage' } } } }
+
+  /api/v1/admin/owners/{ownerId}/audit:
+    get:
+      tags: [AdminOwners]
+      operationId: getOwnerAudit
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAuditPage' } } } }
+
+  /api/v1/admin/owners/{ownerId}/suspend:
+    post:
+      tags: [AdminOwners]
+      operationId: suspendOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OwnerSuspendBody' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } } }
+
+  /api/v1/admin/owners/{ownerId}/reactivate:
+    post:
+      tags: [AdminOwners]
+      operationId: reactivateOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } } }
+
+  /api/v1/admin/owners/{ownerId}/ban:
+    post:
+      tags: [AdminOwners]
+      operationId: banOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OwnerBanBody' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } } }
+        '403': { description: Caller lacks ban capability }
+
+  /api/v1/admin/owners/{ownerId}/unban:
+    post:
+      tags: [AdminOwners]
+      operationId: unbanOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } } }
+
+  /api/v1/admin/owners/{ownerId}/verification:
+    post:
+      tags: [AdminOwners]
+      operationId: setOwnerVerification
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OwnerVerificationBody' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnerAdminDetail' } } } }
+
+  /api/v1/admin/owners/{ownerId}/force-logout:
+    post:
+      tags: [AdminOwners]
+      operationId: forceLogoutOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Sessions invalidated }
+
+  /api/v1/admin/owners/{ownerId}/reset-password:
+    post:
+      tags: [AdminOwners]
+      summary: Trigger password reset (never returns or sets a password)
+      operationId: triggerOwnerPasswordReset
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Reset link/OTP dispatched }
+
+  /api/v1/admin/owners/{ownerId}/message:
+    post:
+      tags: [AdminOwners]
+      operationId: messageOwner
+      parameters:
+        - { name: ownerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OwnerMessageBody' } } }
+      responses:
+        '202': { description: Queued/sent }
 
   /api/v1/admin/venues:
     get:

@@ -215,6 +215,36 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
     @Query("SELECT COUNT(DISTINCT b.player.id) FROM BookingEntity b WHERE b.cancellationReason = 'TIME_OVER'")
     long countFlaggedPlayers();
 
+    // ─── Admin Owners: per-owner aggregates + cascade ────────────────────────
+    /**
+     * Batch aggregate per owner across all their venues. Each row:
+     * [ownerId, grossBookingValue(SUCCESS), bookingCount, ownerCancelCount, lastBookingAt].
+     */
+    @Query("SELECT b.venue.owner.id, "
+            + "COALESCE(SUM(CASE WHEN b.paymentStatus = 'SUCCESS' THEN b.amount ELSE 0 END), 0), "
+            + "COUNT(b), "
+            + "SUM(CASE WHEN b.status = 'CANCELLED' AND b.cancellationReason = 'OWNER' THEN 1 ELSE 0 END), "
+            + "MAX(b.createdAt) "
+            + "FROM BookingEntity b WHERE b.venue.owner.id IN :ownerIds GROUP BY b.venue.owner.id")
+    List<Object[]> aggregateByOwnerIds(@Param("ownerIds") Collection<Long> ownerIds);
+
+    /** Owners who have cancelled at least one player booking (Admin Owners KPI: "Flagged" proxy). */
+    @Query("SELECT COUNT(DISTINCT b.venue.owner.id) FROM BookingEntity b "
+            + "WHERE b.status = 'CANCELLED' AND b.cancellationReason = 'OWNER'")
+    long countDistinctFlaggedOwners();
+
+    /**
+     * Upcoming (slot date ≥ :fromDate) bookings in the given statuses across all of an owner's
+     * venues — the set the suspend/ban/delete cascade may cancel. Slot + player are fetched so the
+     * caller can free the slot and notify the player without lazy-init surprises.
+     */
+    @Query("SELECT b FROM BookingEntity b LEFT JOIN FETCH b.slot LEFT JOIN FETCH b.player "
+            + "WHERE b.venue.owner = :owner AND b.status IN :statuses AND b.date >= :fromDate")
+    List<BookingEntity> findUpcomingForOwner(
+            @Param("owner") UserEntity owner,
+            @Param("statuses") Collection<BookingEntity.BookingStatus> statuses,
+            @Param("fromDate") LocalDate fromDate);
+
     // Group booking lookup
     List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
 
