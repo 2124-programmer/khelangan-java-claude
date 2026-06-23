@@ -114,6 +114,14 @@ public class UserEntity {
     @Column(name = "last_active_at")
     private LocalDateTime lastActiveAt;
 
+    /**
+     * Number of disputes this party has been found at fault in (or FLAGged via a dispute ruling).
+     * Feeds the Players/Owners risk model so repeat offenders surface automatically.
+     */
+    @Column(name = "dispute_at_fault_count", nullable = false)
+    @Builder.Default
+    private int disputeAtFaultCount = 0;
+
     /** Incremented on password change/reset/email-change and admin force-logout to invalidate all JWTs. */
     @Column(name = "token_version", nullable = false)
     @Builder.Default

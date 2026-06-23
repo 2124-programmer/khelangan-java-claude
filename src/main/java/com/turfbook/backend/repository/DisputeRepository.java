@@ -20,4 +20,27 @@ public interface DisputeRepository extends JpaRepository<DisputeEntity, Long> {
     Page<DisputeEntity> findAllOrderByCreatedAtDesc(Pageable pageable);
 
     long countByStatus(DisputeEntity.DisputeStatus status);
+
+    long countByStatusIn(java.util.Collection<DisputeEntity.DisputeStatus> statuses);
+
+    // ── Admin triage stats / party signals ──────────────────────────────────
+    /** Prior-dispute counts for the party mini-cards. */
+    long countByPlayer(UserEntity player);
+
+    long countByOwner(UserEntity owner);
+
+    /** Disputes still in an open state and older than their SLA window (overdue KPI). */
+    @Query("SELECT COUNT(d) FROM DisputeEntity d WHERE d.status IN :openStatuses "
+            + "AND d.raisedAt IS NOT NULL AND d.raisedAt < :cutoff")
+    long countOverdue(@Param("openStatuses") java.util.Collection<DisputeEntity.DisputeStatus> openStatuses,
+                      @Param("cutoff") java.time.LocalDateTime cutoff);
+
+    long countByStatusAndResolvedAtAfter(DisputeEntity.DisputeStatus status, java.time.LocalDateTime after);
+
+    /** Resolved-at timestamps in a window, to compute the average resolution time. */
+    @Query("SELECT d.raisedAt, d.resolvedAt FROM DisputeEntity d "
+            + "WHERE d.status = :status AND d.resolvedAt IS NOT NULL AND d.resolvedAt >= :after")
+    java.util.List<Object[]> findResolutionDurations(
+            @Param("status") DisputeEntity.DisputeStatus status,
+            @Param("after") java.time.LocalDateTime after);
 }

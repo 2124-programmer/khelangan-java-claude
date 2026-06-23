@@ -9,6 +9,8 @@ import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.DisputeMapper;
 import com.turfbook.backend.repository.BookingRepository;
+import com.turfbook.backend.repository.DisputeEventRepository;
+import com.turfbook.backend.repository.DisputeMessageRepository;
 import com.turfbook.backend.repository.DisputeRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.service.DisputeService;
@@ -21,6 +23,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,6 +35,17 @@ public class DisputeServiceImpl implements DisputeService {
     private final UserRepository userRepository;
     private final DisputeMapper disputeMapper;
     private final NotificationService notificationService;
+    private final DisputeMessageRepository messageRepository;
+    private final DisputeEventRepository eventRepository;
+
+    /** High-stakes categories triage to HIGH; soft ones to LOW; the rest MEDIUM. */
+    static DisputeEntity.Priority priorityFor(DisputeEntity.Category category) {
+        return switch (category) {
+            case OWNER_NO_SHOW, SAFETY_BEHAVIOR, DOUBLE_BOOKING -> DisputeEntity.Priority.HIGH;
+            case OTHER -> DisputeEntity.Priority.LOW;
+            default -> DisputeEntity.Priority.MEDIUM;
+        };
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -64,6 +79,13 @@ public class DisputeServiceImpl implements DisputeService {
 
         UserEntity owner = booking.getVenue().getOwner();
 
+        DisputeEntity.Category category = DisputeEntity.Category.OTHER;
+        if (request.getCategory() != null) {
+            try { category = DisputeEntity.Category.valueOf(request.getCategory().getValue()); }
+            catch (IllegalArgumentException ignored) { /* keep OTHER */ }
+        }
+        LocalDateTime now = LocalDateTime.now();
+
         DisputeEntity dispute = DisputeEntity.builder()
                 .booking(booking)
                 .player(player)
@@ -73,9 +95,22 @@ public class DisputeServiceImpl implements DisputeService {
                 .venueName(booking.getVenue().getName())
                 .issue(request.getIssue())
                 .status(DisputeEntity.DisputeStatus.OPEN)
+                .category(category)
+                .priority(priorityFor(category))
+                .raisedByRole(DisputeEntity.PartyRole.PLAYER)
+                .raisedAt(now)
+                .slaHours(48)
                 .build();
 
         dispute = disputeRepository.save(dispute);
+
+        // Mirror the complaint as the first party-visible conversation message + a timeline entry.
+        messageRepository.save(com.turfbook.backend.entity.DisputeMessageEntity.builder()
+                .dispute(dispute).senderRole("PLAYER").senderName(player.getName())
+                .body(request.getIssue()).build());
+        eventRepository.save(com.turfbook.backend.entity.DisputeEventEntity.builder()
+                .dispute(dispute).action("RAISED").actorName(player.getName())
+                .summary("Dispute raised: " + category.name()).build());
 
         notificationService.createNotification(
                 owner,
@@ -98,6 +133,7 @@ public class DisputeServiceImpl implements DisputeService {
 
         dispute.setStatus(DisputeEntity.DisputeStatus.RESOLVED);
         dispute.setResolvedNote(request.getResolvedNote());
+        if (dispute.getResolvedAt() == null) dispute.setResolvedAt(LocalDateTime.now());
         dispute = disputeRepository.save(dispute);
 
         notificationService.createNotification(

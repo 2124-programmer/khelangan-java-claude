@@ -1008,6 +1008,163 @@ components:
         subject: { type: string, nullable: true }
         body: { type: string, minLength: 1 }
 
+    # ─── Admin Disputes ───────────────────────────────────────────────────────
+    DisputeStatus: { type: string, enum: [OPEN, UNDER_REVIEW, NEEDS_INFO, RESOLVED, DISMISSED] }
+    DisputeCategory: { type: string, enum: [OWNER_NO_SHOW, OWNER_CANCELLATION, DOUBLE_BOOKING, NOT_AS_DESCRIBED, REFUND_NOT_GIVEN, OVERCHARGED, SAFETY_BEHAVIOR, OTHER] }
+    DisputePriority: { type: string, enum: [LOW, MEDIUM, HIGH] }
+    PartyRole: { type: string, enum: [PLAYER, OWNER] }
+    WaitingOn: { type: string, enum: [PLAYER, OWNER, NONE] }
+    ResolutionOutcome: { type: string, enum: [RULED_FOR_PLAYER, RULED_FOR_OWNER, PARTIAL, RESOLVED_BY_PARTIES, DISMISSED] }
+    ConsequenceAction: { type: string, enum: [NONE, WARN, FLAG, SUSPEND, BAN] }
+    DisputeActionCode: { type: string, enum: [ASSIGN, MESSAGE, REQUEST_INFO, ADD_NOTE, RESOLVE, DISMISS, REOPEN, APPLY_CONSEQUENCE] }
+
+    PartyMini:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        role: { $ref: '#/components/schemas/PartyRole' }
+        name: { type: string }
+        phoneVerified: { type: boolean }
+        riskLevel: { type: string, description: NONE/LOW/MEDIUM/HIGH }
+        priorDisputeCount: { type: integer }
+        rating: { type: number, nullable: true }
+
+    DisputeRow:
+      type: object
+      properties:
+        disputeId: { type: integer, format: int64 }
+        title: { type: string }
+        category: { $ref: '#/components/schemas/DisputeCategory' }
+        status: { $ref: '#/components/schemas/DisputeStatus' }
+        priority: { $ref: '#/components/schemas/DisputePriority' }
+        bookingRef: { type: string, nullable: true }
+        venueName: { type: string, nullable: true }
+        playerName: { type: string }
+        ownerName: { type: string }
+        assignedToName: { type: string, nullable: true }
+        waitingOn: { $ref: '#/components/schemas/WaitingOn' }
+        raisedAt: { type: string, format: date-time, nullable: true }
+        isOverdue: { type: boolean }
+    AdminDisputePage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/DisputeRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+
+    DisputeStats:
+      type: object
+      properties:
+        open: { type: integer }
+        needsInfo: { type: integer }
+        overdue: { type: integer }
+        resolvedThisWeek: { type: integer }
+        avgResolutionHours: { type: integer }
+
+    DisputeConversationItem:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        senderRole: { type: string, description: PLAYER/OWNER/ADMIN }
+        senderName: { type: string }
+        body: { type: string }
+        attachments: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time, nullable: true }
+    DisputeInternalNote:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        authorName: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time, nullable: true }
+    DisputeTimelineItem:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        action: { type: string }
+        actorName: { type: string }
+        summary: { type: string }
+        createdAt: { type: string, format: date-time, nullable: true }
+    DisputeResolution:
+      type: object
+      properties:
+        outcome: { $ref: '#/components/schemas/ResolutionOutcome' }
+        atFault: { type: string, description: PLAYER/OWNER/NONE }
+        rulingNote: { type: string }
+        recommendedRefundAmount: { type: integer, nullable: true }
+        consequenceTarget: { type: string, nullable: true, description: PLAYER/OWNER/NONE }
+        consequenceAction: { $ref: '#/components/schemas/ConsequenceAction' }
+        resolvedByName: { type: string, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+    DisputeBookingRef:
+      type: object
+      properties:
+        bookingId: { type: integer, format: int64 }
+        ref: { type: string }
+        venueName: { type: string }
+        date: { type: string, format: date, nullable: true }
+        slotLabel: { type: string }
+        amount: { type: integer }
+        methodLabel: { type: string, nullable: true }
+        status: { type: string }
+
+    DisputeDetail:
+      type: object
+      properties:
+        disputeId: { type: integer, format: int64 }
+        title: { type: string }
+        category: { $ref: '#/components/schemas/DisputeCategory' }
+        status: { $ref: '#/components/schemas/DisputeStatus' }
+        priority: { $ref: '#/components/schemas/DisputePriority' }
+        raisedByRole: { $ref: '#/components/schemas/PartyRole' }
+        raisedAt: { type: string, format: date-time, nullable: true }
+        assignedToName: { type: string, nullable: true }
+        waitingOn: { $ref: '#/components/schemas/WaitingOn' }
+        isOverdue: { type: boolean }
+        slaHours: { type: integer }
+        booking:
+          allOf:
+            - $ref: '#/components/schemas/DisputeBookingRef'
+          nullable: true
+        player: { $ref: '#/components/schemas/PartyMini' }
+        owner: { $ref: '#/components/schemas/PartyMini' }
+        conversation: { type: array, items: { $ref: '#/components/schemas/DisputeConversationItem' } }
+        internalNotes: { type: array, items: { $ref: '#/components/schemas/DisputeInternalNote' } }
+        timeline: { type: array, items: { $ref: '#/components/schemas/DisputeTimelineItem' } }
+        resolution:
+          allOf:
+            - $ref: '#/components/schemas/DisputeResolution'
+          nullable: true
+        availableActions:
+          type: array
+          items: { type: string }
+
+    DisputeResolveBody:
+      type: object
+      required: [outcome, atFault, rulingNote]
+      properties:
+        outcome: { $ref: '#/components/schemas/ResolutionOutcome' }
+        atFault: { type: string, description: PLAYER/OWNER/NONE }
+        rulingNote: { type: string, minLength: 1 }
+        recommendedRefundAmount: { type: integer, nullable: true }
+        consequence:
+          type: object
+          nullable: true
+          properties:
+            target: { $ref: '#/components/schemas/PartyRole' }
+            action: { $ref: '#/components/schemas/ConsequenceAction' }
+            reason: { type: string }
+            until: { type: string, format: date, nullable: true }
+    DisputeReasonBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+
     VenueSummaryPage:
       type: object
       properties:
@@ -1596,6 +1753,10 @@ components:
           format: int64
         issue:
           type: string
+        category:
+          $ref: '#/components/schemas/DisputeCategory'
+          nullable: true
+          description: Optional at raise time; defaults to OTHER. Priority is derived from it server-side.
 
     ResolveDisputeRequest:
       type: object
@@ -3420,6 +3581,140 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/OwnerMessageBody' } } }
       responses:
         '202': { description: Queued/sent }
+
+  # ─── Admin Disputes ────────────────────────────────────────────────────────
+  /api/v1/admin/disputes:
+    get:
+      tags: [AdminDisputes]
+      summary: List disputes (triage queue)
+      operationId: listAdminDisputes
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, explode: true, schema: { type: array, items: { $ref: '#/components/schemas/DisputeStatus' } } }
+        - { name: category, in: query, explode: true, schema: { type: array, items: { $ref: '#/components/schemas/DisputeCategory' } } }
+        - { name: priority, in: query, schema: { type: string, enum: [LOW, MEDIUM, HIGH] } }
+        - { name: assigned, in: query, schema: { type: string, enum: [ME, UNASSIGNED, ANYONE], default: ANYONE } }
+        - { name: sort, in: query, schema: { type: string, enum: [OLDEST, NEWEST, PRIORITY, LONGEST_WAITING], default: PRIORITY } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminDisputePage' } } } }
+
+  /api/v1/admin/disputes/stats:
+    get:
+      tags: [AdminDisputes]
+      operationId: getDisputeStats
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeStats' } } } }
+
+  /api/v1/admin/disputes/{disputeId}:
+    get:
+      tags: [AdminDisputes]
+      operationId: getDisputeDetail
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+        '404': { description: Not found }
+
+  /api/v1/admin/disputes/{disputeId}/assign:
+    post:
+      tags: [AdminDisputes]
+      operationId: assignDispute
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                adminId: { type: integer, format: int64, nullable: true }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+
+  /api/v1/admin/disputes/{disputeId}/message:
+    post:
+      tags: [AdminDisputes]
+      summary: Send a message into the party-visible conversation
+      operationId: messageDisputeParty
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audience, channels, body]
+              properties:
+                audience: { type: string, enum: [PLAYER, OWNER, BOTH] }
+                channels: { type: array, items: { type: string, description: IN_APP/EMAIL/SMS }, minItems: 1 }
+                body: { type: string, minLength: 1 }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+
+  /api/v1/admin/disputes/{disputeId}/request-info:
+    post:
+      tags: [AdminDisputes]
+      operationId: requestDisputeInfo
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [party, message]
+              properties:
+                party: { $ref: '#/components/schemas/PartyRole' }
+                message: { type: string, minLength: 1 }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+
+  /api/v1/admin/disputes/{disputeId}/notes:
+    post:
+      tags: [AdminDisputes]
+      summary: Add an admin-only internal note (never sent to parties)
+      operationId: addDisputeNote
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1 }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+
+  /api/v1/admin/disputes/{disputeId}/resolve:
+    post:
+      tags: [AdminDisputes]
+      operationId: adminResolveDispute
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeResolveBody' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+        '403': { description: Caller lacks capability for the requested consequence }
+
+  /api/v1/admin/disputes/{disputeId}/dismiss:
+    post:
+      tags: [AdminDisputes]
+      operationId: dismissDispute
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeReasonBody' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
+
+  /api/v1/admin/disputes/{disputeId}/reopen:
+    post:
+      tags: [AdminDisputes]
+      operationId: reopenDispute
+      parameters: [ { name: disputeId, in: path, required: true, schema: { type: integer, format: int64 } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeReasonBody' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DisputeDetail' } } } }
 
   /api/v1/admin/venues:
     get:

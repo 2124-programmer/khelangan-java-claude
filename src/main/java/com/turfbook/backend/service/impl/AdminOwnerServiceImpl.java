@@ -196,7 +196,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
         Double rating = ratingFor(ownerId);
 
         int cancelRatePct = bookingCount > 0 ? (int) Math.round(100.0 * ownerCancel / bookingCount) : 0;
-        Risk risk = riskOf(cancelRatePct, rating, bookingCount);
+        Risk risk = riskOf(cancelRatePct, rating, bookingCount, u.getDisputeAtFaultCount());
 
         OwnerStatsBlock stats = new OwnerStatsBlock()
                 .totalVenues(totalVenues)
@@ -205,7 +205,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
                 .bookingCount((int) bookingCount)
                 .rating(rating != null ? BigDecimal.valueOf(rating) : null)
                 .ownerCancellationRatePct(cancelRatePct)
-                .disputeCount(0)
+                .disputeCount(u.getDisputeAtFaultCount())
                 .refundRatePct(0);
 
         OwnerAdminDetail dto = new OwnerAdminDetail()
@@ -638,7 +638,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
         int liveVenues = v != null ? (int) v[1] : 0;
         Double rating = v != null && v[2] >= 0 ? v[2] / 1000.0 : null;
         int cancelRatePct = bookingCount > 0 ? (int) Math.round(100.0 * ownerCancel / bookingCount) : 0;
-        Risk risk = riskOf(cancelRatePct, rating, bookingCount);
+        Risk risk = riskOf(cancelRatePct, rating, bookingCount, u.getDisputeAtFaultCount());
 
         return new OwnerRow()
                 .ownerId(u.getId())
@@ -692,13 +692,19 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
 
     private record Risk(String level, String reason) {}
 
-    /** Owner risk from owner-cancellation rate + venue rating (no dispute system yet). */
-    private Risk riskOf(int cancelRatePct, Double rating, long bookingCount) {
+    /** Owner risk from owner-cancellation rate + venue rating + disputes lost (at-fault count). */
+    private Risk riskOf(int cancelRatePct, Double rating, long bookingCount, int disputeAtFaultCount) {
+        if (disputeAtFaultCount >= 3) {
+            return new Risk("HIGH", disputeAtFaultCount + " disputes lost");
+        }
         if (bookingCount > 0 && cancelRatePct >= 30) {
             return new Risk("HIGH", cancelRatePct + "% owner-cancellation rate");
         }
         if (rating != null && rating < 2.5) {
             return new Risk("HIGH", "Low rating (" + String.format("%.1f", rating) + "★)");
+        }
+        if (disputeAtFaultCount >= 1) {
+            return new Risk("MEDIUM", disputeAtFaultCount + " dispute(s) lost");
         }
         if (bookingCount > 0 && cancelRatePct >= 15) {
             return new Risk("MEDIUM", cancelRatePct + "% owner-cancellation rate");

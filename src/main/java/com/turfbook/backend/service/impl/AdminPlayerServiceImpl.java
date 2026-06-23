@@ -177,7 +177,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
                 .cancellationRatePct(cancelRate)
                 .noShowCount((int) noShows);
 
-        Risk risk = riskOf(bookingCount, playerCancels, noShows);
+        Risk risk = riskOf(bookingCount, playerCancels, noShows, u.getDisputeAtFaultCount());
 
         OffsetDateTime lastActive = a[0] > 0
                 ? OffsetDateTime.ofInstant(java.time.Instant.ofEpochSecond(a[0]), ZoneOffset.UTC)
@@ -402,13 +402,17 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
 
     private record Risk(String level, String reason) {}
 
-    private Risk riskOf(long bookingCount, long playerCancels, long noShows) {
+    private Risk riskOf(long bookingCount, long playerCancels, long noShows, int disputeAtFaultCount) {
         int cancelRate = bookingCount > 0 ? (int) Math.round(100.0 * playerCancels / bookingCount) : 0;
-        if (noShows >= RESTRICT_NOSHOW_HIGH || cancelRate >= 40) {
-            return new Risk("HIGH", noShows >= RESTRICT_NOSHOW_HIGH ? noShows + " no-shows" : cancelRate + "% cancellation rate");
+        if (disputeAtFaultCount >= 3 || noShows >= RESTRICT_NOSHOW_HIGH || cancelRate >= 40) {
+            String reason = disputeAtFaultCount >= 3 ? disputeAtFaultCount + " disputes lost"
+                    : noShows >= RESTRICT_NOSHOW_HIGH ? noShows + " no-shows" : cancelRate + "% cancellation rate";
+            return new Risk("HIGH", reason);
         }
-        if (noShows >= 1 || cancelRate >= 20) {
-            return new Risk("MEDIUM", noShows >= 1 ? noShows + " no-show(s)" : cancelRate + "% cancellation rate");
+        if (disputeAtFaultCount >= 1 || noShows >= 1 || cancelRate >= 20) {
+            String reason = disputeAtFaultCount >= 1 ? disputeAtFaultCount + " dispute(s) lost"
+                    : noShows >= 1 ? noShows + " no-show(s)" : cancelRate + "% cancellation rate";
+            return new Risk("MEDIUM", reason);
         }
         return new Risk("NONE", null);
     }
@@ -436,7 +440,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
         long count = a != null ? a[2] : u.getTotalBookings();
         long cancels = a != null ? a[3] : 0;
         long noShows = a != null ? a[4] : 0;
-        Risk risk = riskOf(count, cancels, noShows);
+        Risk risk = riskOf(count, cancels, noShows, u.getDisputeAtFaultCount());
         return new PlayerRow()
                 .playerId(u.getId())
                 .name(u.getName())
