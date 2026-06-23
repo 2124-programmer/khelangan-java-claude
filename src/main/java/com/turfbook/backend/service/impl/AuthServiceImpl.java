@@ -7,6 +7,7 @@ import com.turfbook.backend.entity.PasswordResetTokenEntity;
 import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.exception.BadRequestException;
 import com.turfbook.backend.exception.ConflictException;
+import com.turfbook.backend.exception.ForbiddenException;
 import com.turfbook.backend.exception.TooManyRequestsException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.UserMapper;
@@ -21,6 +22,9 @@ import com.turfbook.backend.util.LogMaskUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -118,19 +122,26 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
         log.info("AuthService.login() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getEmail().toLowerCase().trim(),
-                        request.getPassword()
-                )
-        );
+        String email = request.getEmail().toLowerCase().trim();
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(email, request.getPassword()));
+        } catch (LockedException | DisabledException e) {
+            // A moderated (suspended/banned) account has accountNonLocked/enabled = false, so Spring
+            // throws here before our own block-check. Translate it into a clear, status-aware message
+            // (a ForbiddenException → 403, which also avoids the 401 refresh interceptor on the client).
+            throw new ForbiddenException(blockedMessageFor(email));
+        } catch (BadCredentialsException e) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        UserEntity user = userRepository.findByActiveEmail(request.getEmail().toLowerCase().trim())
+        UserEntity user = userRepository.findByActiveEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (user.isBlocked()) {
-            throw new UnauthorizedException("Your account has been blocked. Please contact support.");
+            throw new ForbiddenException(blockedMessageFor(email));
         }
 
         String token = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
@@ -226,7 +237,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findByActiveEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("Account not found."));
         if (user.isBlocked()) {
-            throw new UnauthorizedException("Your account has been blocked. Please contact support.");
+            throw new ForbiddenException(blockedMessageFor(email));
         }
 
         String token = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
@@ -438,6 +449,20 @@ public class AuthServiceImpl implements AuthService {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** A human, status-aware reason for a blocked login (suspended vs banned vs generic). */
+    private String blockedMessageFor(String email) {
+        UserEntity u = userRepository.findByActiveEmail(email).orElse(null);
+        if (u == null) return "Your account has been blocked. Please contact support.";
+        return switch (u.getStatus()) {
+            case SUSPENDED -> "Your account has been suspended."
+                    + (u.getSuspendedReason() != null ? " Reason: " + u.getSuspendedReason() : "")
+                    + " Please contact support.";
+            case BANNED -> "Your account has been banned. Please contact support.";
+            case DELETED -> "This account no longer exists.";
+            default -> "Your account has been blocked. Please contact support.";
+        };
+    }
 
     private static String generateSecureHex(int bytes) {
         byte[] buf = new byte[bytes];

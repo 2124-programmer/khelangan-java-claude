@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -80,6 +81,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDisabled(DisabledException ex,
                                                          HttpServletRequest request) {
         return buildResponse(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Your account has been blocked", request, null);
+    }
+
+    /**
+     * Spring throws LockedException for a moderated (suspended/banned) account during
+     * authentication — before our own block-check runs. Without this it fell through to the
+     * generic 500. AuthServiceImpl.login already returns a status-aware message; this is the
+     * safety net for any other authenticate() path.
+     */
+    @ExceptionHandler(LockedException.class)
+    public ResponseEntity<ErrorResponse> handleLocked(LockedException ex,
+                                                      HttpServletRequest request) {
+        return buildResponse(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED",
+                "Your account has been blocked. Please contact support.", request, null);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
