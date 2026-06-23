@@ -504,6 +504,11 @@ public class BookingServiceImpl implements BookingService {
 
         booking = bookingRepository.save(booking);
 
+        // Dismiss the owner's actionable "New Booking Request" notification so its Accept/Reject
+        // buttons disappear once the booking is actioned — regardless of where it was accepted from.
+        notificationService.dismissNotificationsForBooking(
+                booking.getVenue().getOwner(), String.valueOf(booking.getId()));
+
         notificationService.createNotification(
                 player,
                 "Booking Confirmed",
@@ -543,6 +548,9 @@ public class BookingServiceImpl implements BookingService {
         slotRepository.save(slot);
 
         booking = bookingRepository.save(booking);
+
+        notificationService.dismissNotificationsForBooking(
+                booking.getVenue().getOwner(), String.valueOf(booking.getId()));
 
         notificationService.createNotification(
                 booking.getPlayer(),
@@ -720,6 +728,8 @@ public class BookingServiceImpl implements BookingService {
         }
         userRepository.save(player);
 
+        notificationService.dismissNotificationsForBooking(venue.getOwner(), groupId);
+
         int totalAmount = results.stream().mapToInt(BookingDto::getAmount).sum();
         notificationService.createNotification(
                 player,
@@ -764,6 +774,8 @@ public class BookingServiceImpl implements BookingService {
             }
             results.add(bookingMapper.toDto(bookingRepository.save(booking)));
         }
+
+        notificationService.dismissNotificationsForBooking(venue.getOwner(), groupId);
 
         notificationService.createNotification(
                 player,
