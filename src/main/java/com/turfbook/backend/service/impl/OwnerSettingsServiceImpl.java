@@ -41,7 +41,7 @@ public class OwnerSettingsServiceImpl implements OwnerSettingsService {
             if (Boolean.TRUE.equals(request.getAutoAcceptBookings())
                     && !subscriptionGate.ownerHasFeatureOnAnyVenue(ownerId, FeatureCode.AUTO_ACCEPT)) {
                 throw new ForbiddenException(
-                        "Auto-accept requires a Growth plan or higher. Upgrade a venue to enable it.");
+                        "Auto-accept requires a Growth plan or higher. Upgrade a venue Subscription to enable it.");
             }
             settings.setAutoAcceptBookings(request.getAutoAcceptBookings());
         }

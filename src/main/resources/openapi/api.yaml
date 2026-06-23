@@ -1703,9 +1703,22 @@ components:
         venueId:
           type: integer
           format: int64
+        venueName:
+          type: string
+        venueCity:
+          type: string
+          nullable: true
+        ownerName:
+          type: string
+        ownerEmail:
+          type: string
+          nullable: true
         currentSubscriptionId:
           type: integer
           format: int64
+          nullable: true
+        currentPlanName:
+          type: string
           nullable: true
         requestedPlanId:
           type: integer
@@ -1714,6 +1727,11 @@ components:
           type: string
         requestedPlanName:
           type: string
+        requestedPlanPrice:
+          type: integer
+          description: Price for the requested billing cycle (₹)
+        requestedPlanMaxCourts:
+          type: integer
         requestedCycle:
           type: string
           description: MONTHLY or ANNUAL

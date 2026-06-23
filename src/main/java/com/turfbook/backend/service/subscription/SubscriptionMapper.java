@@ -97,14 +97,24 @@ public class SubscriptionMapper {
     }
 
     public SubscriptionChangeRequest toChangeRequestDto(SubscriptionChangeRequestEntity e) {
+        SubscriptionPlanEntity plan = e.getRequestedPlan();
+        boolean annual = e.getRequestedCycle() == com.turfbook.backend.entity.BillingCycle.ANNUAL;
+        int requestedPrice = annual ? plan.getPriceAnnual() : plan.getPriceMonthly();
         return new SubscriptionChangeRequest()
                 .id(e.getId())
                 .ownerId(e.getOwner().getId())
+                .ownerName(e.getOwner().getName())
+                .ownerEmail(e.getOwner().getEmail())
                 .venueId(e.getVenue().getId())
+                .venueName(e.getVenue().getName())
+                .venueCity(e.getVenue().getCity())
                 .currentSubscriptionId(e.getCurrentSubscription() != null ? e.getCurrentSubscription().getId() : null)
-                .requestedPlanId(e.getRequestedPlan().getId())
-                .requestedPlanCode(e.getRequestedPlan().getCode().name())
-                .requestedPlanName(e.getRequestedPlan().getName())
+                .currentPlanName(e.getCurrentSubscription() != null ? e.getCurrentSubscription().getPlanName() : null)
+                .requestedPlanId(plan.getId())
+                .requestedPlanCode(plan.getCode().name())
+                .requestedPlanName(plan.getName())
+                .requestedPlanPrice(requestedPrice)
+                .requestedPlanMaxCourts(plan.getMaxCourts())
                 .requestedCycle(e.getRequestedCycle().name())
                 .status(e.getStatus().name())
                 .createdAt(odt(e.getCreatedAt()))
