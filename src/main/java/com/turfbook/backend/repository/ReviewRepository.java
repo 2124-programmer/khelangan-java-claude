@@ -28,4 +28,6 @@ public interface ReviewRepository extends JpaRepository<ReviewEntity, Long> {
     Double avgRatingByVenue(@Param("venue") VenueEntity venue);
 
     long countByVenue(VenueEntity venue);
+
+    long countByPlayer(UserEntity player);
 }

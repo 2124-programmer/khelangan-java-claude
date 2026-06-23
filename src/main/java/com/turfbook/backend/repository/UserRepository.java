@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Repository
@@ -16,6 +17,10 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
     Optional<UserEntity> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    long countByRole(UserEntity.Role role);
+
+    long countByRoleAndCreatedAtAfter(UserEntity.Role role, LocalDateTime after);
 
     @Query("SELECT u FROM UserEntity u WHERE " +
            "(:role IS NULL OR u.role = :role) AND " +

@@ -188,6 +188,33 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             Pageable pageable
     );
 
+    // ─── Admin Players: per-player aggregates ────────────────────────────────
+    /**
+     * Batch aggregate per player for a page of users. Each row:
+     * [playerId, totalSpend(SUCCESS), lastBookingAt, bookingCount, playerCancelCount, noShowCount].
+     */
+    @Query("SELECT b.player.id, "
+            + "COALESCE(SUM(CASE WHEN b.paymentStatus = 'SUCCESS' THEN b.amount ELSE 0 END), 0), "
+            + "MAX(b.createdAt), "
+            + "COUNT(b), "
+            + "SUM(CASE WHEN b.status = 'CANCELLED' AND b.cancellationReason = 'PLAYER' THEN 1 ELSE 0 END), "
+            + "SUM(CASE WHEN b.cancellationReason = 'TIME_OVER' THEN 1 ELSE 0 END) "
+            + "FROM BookingEntity b WHERE b.player.id IN :ids GROUP BY b.player.id")
+    List<Object[]> aggregateByPlayerIds(@Param("ids") Collection<Long> ids);
+
+    /** Refund aggregate for one player: a single row [count, total]. */
+    @Query("SELECT COUNT(b), COALESCE(SUM(b.amount), 0) FROM BookingEntity b "
+            + "WHERE b.player.id = :playerId AND b.paymentStatus = 'REFUNDED'")
+    List<Object[]> refundAggregateForPlayer(@Param("playerId") Long playerId);
+
+    /** Distinct players who have booked since a cutoff (for active-rate stat). */
+    @Query("SELECT COUNT(DISTINCT b.player.id) FROM BookingEntity b WHERE b.createdAt >= :since")
+    long countDistinctPlayersBookedSince(@Param("since") LocalDateTime since);
+
+    /** Players flagged as risky: a no-show (TIME_OVER) or repeated player cancellations. */
+    @Query("SELECT COUNT(DISTINCT b.player.id) FROM BookingEntity b WHERE b.cancellationReason = 'TIME_OVER'")
+    long countFlaggedPlayers();
+
     // Group booking lookup
     List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
 

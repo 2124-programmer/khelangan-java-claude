@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,16 @@ public class UserEntity {
 
     public enum Role {
         PLAYER, OWNER, ADMIN
+    }
+
+    /**
+     * Account standing for admin moderation.
+     * ACTIVE → normal; SUSPENDED → temporary cool-down; BANNED → identifiers retained + locked;
+     * DELETED → closed (identifier release lands in Phase 2). {@link #isBlocked} stays in sync so
+     * the existing login/OTP block-check denies access without touching the auth core.
+     */
+    public enum AccountStatus {
+        ACTIVE, SUSPENDED, BANNED, DELETED
     }
 
     @Id
@@ -62,7 +73,30 @@ public class UserEntity {
     @Builder.Default
     private boolean isBlocked = false;
 
-    /** Incremented on password change/reset/email-change to invalidate all existing JWTs. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    @Builder.Default
+    private AccountStatus status = AccountStatus.ACTIVE;
+
+    @Column(name = "email_verified", nullable = false)
+    @Builder.Default
+    private boolean emailVerified = false;
+
+    @Column(name = "phone_verified", nullable = false)
+    @Builder.Default
+    private boolean phoneVerified = false;
+
+    @Column(name = "suspended_reason", length = 500)
+    private String suspendedReason;
+
+    @Column(name = "suspended_until")
+    private LocalDate suspendedUntil;
+
+    /** Stamped on moderation transitions (and could later track real engagement). */
+    @Column(name = "last_active_at")
+    private LocalDateTime lastActiveAt;
+
+    /** Incremented on password change/reset/email-change and admin force-logout to invalidate all JWTs. */
     @Column(name = "token_version", nullable = false)
     @Builder.Default
     private int tokenVersion = 0;

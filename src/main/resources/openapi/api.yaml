@@ -693,6 +693,176 @@ components:
         approved: { type: integer }
         rejected: { type: integer }
 
+    # ─── Admin Players ────────────────────────────────────────────────────────
+    PlayerStats:
+      type: object
+      properties:
+        totalPlayers: { type: integer }
+        newThisWeek: { type: integer }
+        activeRatePct: { type: integer }
+        flaggedCount: { type: integer }
+    PlayerRow:
+      type: object
+      properties:
+        playerId: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+        status: { type: string, description: ACTIVE/SUSPENDED/BANNED/DELETED }
+        riskLevel: { type: string, description: NONE/LOW/MEDIUM/HIGH }
+        riskReason: { type: string, nullable: true }
+        bookingCount: { type: integer }
+        totalSpend: { type: integer }
+        lastActiveAt: { type: string, format: date-time, nullable: true }
+        joinedAt: { type: string, format: date-time, nullable: true }
+    PlayerPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/PlayerRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+    PlayerStatsBlock:
+      type: object
+      properties:
+        bookingCount: { type: integer }
+        totalSpend: { type: integer }
+        refundCount: { type: integer }
+        refundTotal: { type: integer }
+        reviewCount: { type: integer }
+        cancellationRatePct: { type: integer }
+        noShowCount: { type: integer }
+    PlayerSuspensionInfo:
+      type: object
+      properties:
+        reason: { type: string, nullable: true }
+        until: { type: string, format: date, nullable: true }
+    PlayerDeletionInfo:
+      type: object
+      properties:
+        deletedAt: { type: string, format: date-time, nullable: true }
+        deletedByName: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+    PlayerAdminDetail:
+      type: object
+      properties:
+        playerId: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+        status: { type: string }
+        riskLevel: { type: string }
+        riskReason: { type: string, nullable: true }
+        joinedAt: { type: string, format: date-time, nullable: true }
+        lastActiveAt: { type: string, format: date-time, nullable: true }
+        stats: { $ref: '#/components/schemas/PlayerStatsBlock' }
+        suspension:
+          allOf:
+            - $ref: '#/components/schemas/PlayerSuspensionInfo'
+          nullable: true
+        deletion:
+          allOf:
+            - $ref: '#/components/schemas/PlayerDeletionInfo'
+          nullable: true
+        availableActions:
+          type: array
+          items: { type: string }
+    PlayerBookingRow:
+      type: object
+      properties:
+        bookingId: { type: integer, format: int64 }
+        venueName: { type: string }
+        date: { type: string, format: date, nullable: true }
+        slotLabel: { type: string }
+        amount: { type: integer }
+        status: { type: string }
+    PlayerBookingPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/PlayerBookingRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+    PlayerPaymentRow:
+      type: object
+      properties:
+        paymentId: { type: integer, format: int64 }
+        date: { type: string, format: date-time, nullable: true }
+        amount: { type: integer }
+        methodLabel: { type: string }
+        status: { type: string }
+        refundedAmount: { type: integer, nullable: true }
+    PlayerPaymentPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/PlayerPaymentRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+    PlayerAuditRow:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        actorName: { type: string, nullable: true }
+        action: { type: string }
+        reason: { type: string, nullable: true }
+        fromStatus: { type: string, nullable: true }
+        toStatus: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+    PlayerAuditPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/PlayerAuditRow' }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+        size: { type: integer }
+        number: { type: integer }
+    PlayerReasonBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    PlayerSuspendBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+        until: { type: string, format: date, nullable: true }
+    PlayerVerificationBody:
+      type: object
+      required: [channel, verified]
+      properties:
+        channel: { type: string, description: EMAIL or PHONE }
+        verified: { type: boolean }
+    PlayerMessageBody:
+      type: object
+      required: [channels, body]
+      properties:
+        channels:
+          type: array
+          items: { type: string, description: IN_APP/EMAIL/SMS }
+          minItems: 1
+        subject: { type: string, nullable: true }
+        body: { type: string, minLength: 1 }
+
     VenueSummaryPage:
       type: object
       properties:
@@ -2751,6 +2921,168 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VenueSummaryPage'
+
+  /api/v1/admin/players:
+    get:
+      tags: [AdminPlayers]
+      summary: List/search players (scaled)
+      operationId: listAdminPlayers
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - name: segment
+          in: query
+          schema: { type: string, default: ALL, description: ALL/NEW/ACTIVE/DORMANT/FLAGGED/RESTRICTED }
+        - name: sort
+          in: query
+          schema: { type: string, default: RECENTLY_ACTIVE, description: MOST_BOOKINGS/HIGHEST_SPEND/RECENTLY_JOINED/RECENTLY_ACTIVE/NAME_ASC }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Page of players
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlayerPage' } } }
+
+  /api/v1/admin/players/stats:
+    get:
+      tags: [AdminPlayers]
+      summary: Player KPI stats
+      operationId: getPlayerStats
+      responses:
+        '200':
+          description: Player stats
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlayerStats' } } }
+
+  /api/v1/admin/players/{playerId}:
+    get:
+      tags: [AdminPlayers]
+      summary: Player admin detail (status-aware)
+      operationId: getPlayerDetail
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Player detail
+          content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAdminDetail' } } }
+        '404': { description: Not found }
+
+  /api/v1/admin/players/{playerId}/suspend:
+    post:
+      tags: [AdminPlayers]
+      operationId: suspendPlayer
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlayerSuspendBody' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAdminDetail' } } } }
+
+  /api/v1/admin/players/{playerId}/reactivate:
+    post:
+      tags: [AdminPlayers]
+      operationId: reactivatePlayer
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAdminDetail' } } } }
+
+  /api/v1/admin/players/{playerId}/ban:
+    post:
+      tags: [AdminPlayers]
+      operationId: banPlayer
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlayerReasonBody' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAdminDetail' } } } }
+        '403': { description: Caller lacks ban capability }
+
+  /api/v1/admin/players/{playerId}/unban:
+    post:
+      tags: [AdminPlayers]
+      operationId: unbanPlayer
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAdminDetail' } } } }
+
+  /api/v1/admin/players/{playerId}/verification:
+    post:
+      tags: [AdminPlayers]
+      operationId: setPlayerVerification
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlayerVerificationBody' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAdminDetail' } } } }
+
+  /api/v1/admin/players/{playerId}/force-logout:
+    post:
+      tags: [AdminPlayers]
+      operationId: forceLogoutPlayer
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Sessions invalidated }
+
+  /api/v1/admin/players/{playerId}/reset-password:
+    post:
+      tags: [AdminPlayers]
+      summary: Trigger password reset (never returns or sets a password)
+      operationId: triggerPlayerPasswordReset
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Reset link/OTP dispatched }
+
+  /api/v1/admin/players/{playerId}/message:
+    post:
+      tags: [AdminPlayers]
+      operationId: messagePlayer
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlayerMessageBody' } } }
+      responses:
+        '202': { description: Queued/sent }
+
+  /api/v1/admin/players/{playerId}/bookings:
+    get:
+      tags: [AdminPlayers]
+      operationId: getPlayerBookings
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerBookingPage' } } } }
+
+  /api/v1/admin/players/{playerId}/payments:
+    get:
+      tags: [AdminPlayers]
+      operationId: getPlayerPayments
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerPaymentPage' } } } }
+
+  /api/v1/admin/players/{playerId}/audit:
+    get:
+      tags: [AdminPlayers]
+      operationId: getPlayerAudit
+      parameters:
+        - { name: playerId, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PlayerAuditPage' } } } }
 
   /api/v1/admin/venues:
     get:
