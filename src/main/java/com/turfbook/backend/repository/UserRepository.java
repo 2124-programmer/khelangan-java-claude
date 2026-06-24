@@ -33,6 +33,10 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
     long countByRoleAndCreatedAtAfter(UserEntity.Role role, LocalDateTime after);
 
+    /** New signups in a window — players + owners created in [from, to). Used by the admin dashboard. */
+    long countByRoleInAndCreatedAtBetween(
+            java.util.Collection<UserEntity.Role> roles, LocalDateTime from, LocalDateTime to);
+
     @Query("SELECT u FROM UserEntity u WHERE " +
            "(:role IS NULL OR u.role = :role) AND " +
            "(:search IS NULL OR LOWER(u.name) LIKE LOWER(CONCAT('%', :search, '%')) " +

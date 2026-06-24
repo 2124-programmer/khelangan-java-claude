@@ -20,4 +20,7 @@ public interface CouponRepository extends JpaRepository<CouponEntity, Long> {
 
     @Query("SELECT c FROM CouponEntity c WHERE c.isActive = true AND c.validUntil >= :today AND c.usedCount < c.maxUses")
     List<CouponEntity> findActiveCoupons(LocalDate today);
+
+    @Query("SELECT COUNT(c) FROM CouponEntity c WHERE c.isActive = true AND c.validUntil >= :today AND c.usedCount < c.maxUses")
+    long countActiveCoupons(LocalDate today);
 }

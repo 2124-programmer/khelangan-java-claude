@@ -17,6 +17,8 @@ public interface SubscriptionChangeRequestRepository
     List<SubscriptionChangeRequestEntity> findByStatusOrderByCreatedAtAsc(
             SubscriptionChangeRequestEntity.Status status);
 
+    long countByStatus(SubscriptionChangeRequestEntity.Status status);
+
     /**
      * Admin listing: eager-fetch the references the DTO mapper reads so it never trips a lazy
      * proxy at serialization time. The INNER JOINs on venue/owner/requestedPlan also naturally

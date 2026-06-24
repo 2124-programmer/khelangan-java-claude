@@ -1,5 +1,6 @@
 package com.turfbook.backend.service.subscription;
 
+import com.turfbook.backend.dto.ActivateChangeRequest;
 import com.turfbook.backend.dto.CourtSelectionBody;
 import com.turfbook.backend.dto.PaidRequestBody;
 import com.turfbook.backend.dto.PlanOption;
@@ -50,7 +51,15 @@ public interface SubscriptionService {
     // ─── Admin: change requests ─────────────────────────────────────────────
     List<SubscriptionChangeRequest> adminListChangeRequests(String status);
 
-    Subscription adminActivateChangeRequest(Long requestId, Long adminId);
+    /** Courts of the request's venue, flagged active + requested-covered, for the admin court picker. */
+    List<SelectableCourt> adminListChangeRequestCourts(Long requestId);
+
+    /**
+     * Approve + activate a pending change request. {@code request} is optional; when it carries a
+     * non-empty {@code courtIds}, that admin-chosen coverage replaces the owner's selection
+     * (validated ≤ plan limit, all belonging to the venue). Pass null to keep the owner's selection.
+     */
+    Subscription adminActivateChangeRequest(Long requestId, ActivateChangeRequest request, Long adminId);
 
     SubscriptionChangeRequest adminRejectChangeRequest(Long requestId, RejectChangeRequest request);
 

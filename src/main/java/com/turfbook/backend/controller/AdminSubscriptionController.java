@@ -1,7 +1,9 @@
 package com.turfbook.backend.controller;
 
 import com.turfbook.backend.api.AdminSubscriptionsApi;
+import com.turfbook.backend.dto.ActivateChangeRequest;
 import com.turfbook.backend.dto.RejectChangeRequest;
+import com.turfbook.backend.dto.SelectableCourt;
 import com.turfbook.backend.dto.Subscription;
 import com.turfbook.backend.dto.SubscriptionChangeRequest;
 import com.turfbook.backend.dto.SubscriptionCreateRequest;
@@ -87,8 +89,14 @@ public class AdminSubscriptionController implements AdminSubscriptionsApi {
     }
 
     @Override
-    public ResponseEntity<Subscription> adminActivateChangeRequest(Long id) {
-        return ResponseEntity.ok(subscriptionService.adminActivateChangeRequest(id, currentUserId()));
+    public ResponseEntity<List<SelectableCourt>> adminListChangeRequestCourts(Long id) {
+        return ResponseEntity.ok(subscriptionService.adminListChangeRequestCourts(id));
+    }
+
+    @Override
+    public ResponseEntity<Subscription> adminActivateChangeRequest(Long id, ActivateChangeRequest activateChangeRequest) {
+        return ResponseEntity.ok(
+                subscriptionService.adminActivateChangeRequest(id, activateChangeRequest, currentUserId()));
     }
 
     @Override

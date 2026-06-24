@@ -1,5 +1,6 @@
 package com.turfbook.backend.service.subscription;
 
+import com.turfbook.backend.dto.ActivateChangeRequest;
 import com.turfbook.backend.dto.CourtSelectionBody;
 import com.turfbook.backend.dto.PaidRequestBody;
 import com.turfbook.backend.dto.PendingRequestRef;
@@ -376,7 +377,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
 
     @Override
     @Transactional
-    public Subscription adminActivateChangeRequest(Long requestId, Long adminId) {
+    public Subscription adminActivateChangeRequest(Long requestId, ActivateChangeRequest req, Long adminId) {
         SubscriptionChangeRequestEntity request = changeRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("SubscriptionChangeRequest", "id", requestId));
         if (request.getStatus() != SubscriptionChangeRequestEntity.Status.PENDING) {
@@ -386,14 +387,20 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         SubscriptionPlanEntity plan = request.getRequestedPlan();
         BillingCycle cycle = request.getRequestedCycle();
 
-        // Court-coverage model: the plan limit caps the COVERED courts the owner selected — NOT the
-        // venue's total court count. A 2-court Starter covering 2 of 4 courts is valid; the other
-        // courts simply stay unbookable. Coverage is applied (defensively capped) below.
+        // Court-coverage model: the plan limit caps the COVERED courts — NOT the venue's total court
+        // count. A 2-court Starter covering 2 of 4 courts is valid; the other courts stay unbookable.
+        // The admin may override the owner's selection at activation time (e.g. after confirming which
+        // courts the cash payment covers); otherwise the owner's requested selection is used (capped).
         SubscriptionEntity currentSub = currentEntity(venue).orElse(null);
-        List<String> coverage = request.getCoveredCourtIds() == null
-                ? new ArrayList<>() : new ArrayList<>(request.getCoveredCourtIds());
-        if (coverage.size() > plan.getMaxCourts()) {
-            coverage = new ArrayList<>(coverage.subList(0, plan.getMaxCourts()));
+        List<String> coverage;
+        if (req != null && req.getCourtIds() != null && !req.getCourtIds().isEmpty()) {
+            coverage = validateSelection(req.getCourtIds(), courtRepository.findByVenue(venue), plan.getMaxCourts());
+        } else {
+            coverage = request.getCoveredCourtIds() == null
+                    ? new ArrayList<>() : new ArrayList<>(request.getCoveredCourtIds());
+            if (coverage.size() > plan.getMaxCourts()) {
+                coverage = new ArrayList<>(coverage.subList(0, plan.getMaxCourts()));
+            }
         }
 
         // Re-request on the SAME (already-paid) plan + cycle is a pure court-coverage change:
@@ -467,6 +474,27 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 String.format("Your plan-change request for '%s' was declined: %s",
                         request.getVenue().getName(), req.getReason()));
         return mapper.toChangeRequestDto(request);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SelectableCourt> adminListChangeRequestCourts(Long requestId) {
+        SubscriptionChangeRequestEntity request = changeRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("SubscriptionChangeRequest", "id", requestId));
+        VenueEntity venue = request.getVenue();
+        // Pre-mark the courts the OWNER asked to cover (not the venue's current coverage) so the admin
+        // edits from the owner's request as the starting point.
+        Set<String> requested = new HashSet<>(
+                request.getCoveredCourtIds() == null ? List.of() : request.getCoveredCourtIds());
+        return courtRepository.findByVenue(venue).stream()
+                .sorted(Comparator.comparing(CourtEntity::getId))
+                .map(c -> new SelectableCourt()
+                        .courtId(String.valueOf(c.getId()))
+                        .name(c.getName())
+                        .sport(c.getSport() != null ? c.getSport().getName() : null)
+                        .isActive(c.isActive())
+                        .isCovered(requested.contains(String.valueOf(c.getId()))))
+                .toList();
     }
 
     // ═══════════════════════════════════════════════════════════════════════

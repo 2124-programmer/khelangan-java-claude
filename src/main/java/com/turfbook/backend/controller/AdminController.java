@@ -24,6 +24,7 @@ public class AdminController implements AdminApi {
     private final PayoutService payoutService;
     private final NotificationService notificationService;
     private final AdminService adminService;
+    private final AdminDashboardService adminDashboardService;
 
     // ─── Users ────────────────────────────────────────────────────────────
 
@@ -155,6 +156,12 @@ public class AdminController implements AdminApi {
     public ResponseEntity<AdminStatsDto> getAdminStats() {
         log.info("AdminController.getAdminStats() called");
         return ResponseEntity.ok(adminService.getAdminStats());
+    }
+
+    @Override
+    public ResponseEntity<DashboardSummary> getAdminDashboardSummary(DashboardPeriod period) {
+        log.info("AdminController.getAdminDashboardSummary() called - period={}", period);
+        return ResponseEntity.ok(adminDashboardService.getSummary(period));
     }
 
     // ─── Settings ─────────────────────────────────────────────────────────

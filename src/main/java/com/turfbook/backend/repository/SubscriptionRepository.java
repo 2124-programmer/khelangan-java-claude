@@ -43,6 +43,23 @@ public interface SubscriptionRepository extends JpaRepository<SubscriptionEntity
     /** PAST_DUE rows whose grace window (periodEnd + grace) has elapsed. */
     List<SubscriptionEntity> findByStatus(SubscriptionStatus status);
 
+    // ── Admin dashboard aggregates ───────────────────────────────────────────
+
+    /** MRR: Σ price of live-gating subscriptions (TRIALING + ACTIVE). */
+    @Query("SELECT COALESCE(SUM(s.price), 0) FROM SubscriptionEntity s WHERE s.status IN :statuses")
+    long sumPriceByStatusIn(@Param("statuses") List<SubscriptionStatus> statuses);
+
+    /** Count of live-gating subscriptions (the "active subscriptions" figure beside MRR). */
+    long countByStatusIn(List<SubscriptionStatus> statuses);
+
+    /** Subscriptions whose paid period ends within a window — "expiring soon". */
+    long countByStatusInAndPeriodEndBetween(
+            List<SubscriptionStatus> statuses, LocalDateTime from, LocalDateTime to);
+
+    /** Trials whose trial window ends within a window — "trials ending". */
+    long countByStatusAndTrialEndBetween(
+            SubscriptionStatus status, LocalDateTime from, LocalDateTime to);
+
     @Query("SELECT s FROM SubscriptionEntity s WHERE " +
            "(:venueId IS NULL OR s.venue.id = :venueId) AND " +
            "(:ownerId IS NULL OR s.owner.id = :ownerId) AND " +

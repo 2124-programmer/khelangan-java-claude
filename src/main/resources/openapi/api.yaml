@@ -1860,6 +1860,149 @@ components:
           type: integer
           format: int64
 
+    # ─── Dashboard summary (single aggregated payload) ───────────────────────
+    DashboardPeriod:
+      type: string
+      enum: [TODAY, WEEK, MONTH]
+    DashboardTone:
+      type: string
+      enum: [NEUTRAL, DANGER]
+    TrendDirection:
+      type: string
+      enum: [UP, DOWN, FLAT]
+    NeedsAttentionKey:
+      type: string
+      enum: [PENDING_APPROVALS, SUBSCRIPTION_REQUESTS, OPEN_DISPUTES, EXPIRING_SUBSCRIPTIONS, TRIALS_ENDING]
+
+    CountMetric:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: integer
+          format: int64
+        trendPct:
+          type: number
+          nullable: true
+        trendDirection:
+          allOf:
+            - $ref: '#/components/schemas/TrendDirection'
+          nullable: true
+
+    MoneyMetric:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: integer
+          format: int64
+        trendPct:
+          type: number
+          nullable: true
+        trendDirection:
+          allOf:
+            - $ref: '#/components/schemas/TrendDirection'
+          nullable: true
+
+    MrrMetric:
+      type: object
+      required: [amount, activeSubscriptions]
+      properties:
+        amount:
+          type: integer
+          format: int64
+        activeSubscriptions:
+          type: integer
+          format: int64
+        trendPct:
+          type: number
+          nullable: true
+        trendDirection:
+          allOf:
+            - $ref: '#/components/schemas/TrendDirection'
+          nullable: true
+
+    NeedsAttentionItem:
+      type: object
+      required: [key, label, count, tone, deepLinkScreen]
+      properties:
+        key:
+          $ref: '#/components/schemas/NeedsAttentionKey'
+        label:
+          type: string
+        count:
+          type: integer
+          format: int64
+        tone:
+          $ref: '#/components/schemas/DashboardTone'
+        deepLinkScreen:
+          type: string
+        deepLinkParams:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    ManagementCounts:
+      type: object
+      properties:
+        venues:
+          type: integer
+          format: int64
+        players:
+          type: integer
+          format: int64
+        owners:
+          type: integer
+          format: int64
+        bookings:
+          type: integer
+          format: int64
+        openDisputes:
+          type: integer
+          format: int64
+        activeCoupons:
+          type: integer
+          format: int64
+
+    DashboardSummary:
+      type: object
+      required: [asOf, period, bookingsThisPeriod, newSignupsThisPeriod, activeVenues, pendingModeration, needsAttention, counts, canViewFinancials]
+      properties:
+        asOf:
+          type: string
+          format: date-time
+        period:
+          $ref: '#/components/schemas/DashboardPeriod'
+        canViewFinancials:
+          type: boolean
+        mrr:
+          allOf:
+            - $ref: '#/components/schemas/MrrMetric'
+          nullable: true
+        revenueThisPeriod:
+          allOf:
+            - $ref: '#/components/schemas/MoneyMetric'
+          nullable: true
+        gbvThisPeriod:
+          allOf:
+            - $ref: '#/components/schemas/MoneyMetric'
+          nullable: true
+        bookingsThisPeriod:
+          $ref: '#/components/schemas/CountMetric'
+        newSignupsThisPeriod:
+          $ref: '#/components/schemas/CountMetric'
+        activeVenues:
+          $ref: '#/components/schemas/CountMetric'
+        pendingModeration:
+          $ref: '#/components/schemas/CountMetric'
+        needsAttention:
+          type: array
+          items:
+            $ref: '#/components/schemas/NeedsAttentionItem'
+        counts:
+          $ref: '#/components/schemas/ManagementCounts'
+
     OwnerStatsDto:
       type: object
       properties:
@@ -2450,6 +2593,19 @@ components:
       properties:
         reason:
           type: string
+
+    ActivateChangeRequest:
+      type: object
+      description: >-
+        Optional admin overrides applied when approving a change request. `courtIds` replaces the
+        owner's requested court coverage (must be ≤ the plan limit and belong to the venue). Omit the
+        body entirely to keep the owner's selection.
+      properties:
+        courtIds:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: Court ids the activated subscription should cover. Null/absent keeps the owner's selection.
 
     # ─── Owner subscription purchase + court coverage ──────────────────────────
     PlanOption:
@@ -4924,6 +5080,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/AdminStatsDto'
 
+  /api/v1/admin/dashboard/summary:
+    get:
+      tags: [Admin]
+      summary: Single aggregated admin dashboard payload
+      operationId: getAdminDashboardSummary
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DashboardPeriod'
+      responses:
+        '200':
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+
   /api/v1/owner/stats:
     get:
       tags: [Venues]
@@ -5222,10 +5397,39 @@ paths:
                 items:
                   $ref: '#/components/schemas/SubscriptionChangeRequest'
 
+  /api/v1/admin/subscription-change-requests/{id}/selectable-courts:
+    get:
+      tags: [AdminSubscriptions]
+      summary: Courts of the request's venue, each flagged active + requested-covered (Admin)
+      description: >-
+        Powers the admin court picker on the change-request detail view. `isCovered` reflects the
+        courts the owner asked to cover; the admin may adjust the selection before activating.
+      operationId: adminListChangeRequestCourts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Selectable courts for the request's venue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SelectableCourt'
+
   /api/v1/admin/subscription-change-requests/{id}/activate:
     post:
       tags: [AdminSubscriptions]
       summary: Activate a pending change request as a new subscription (Admin)
+      description: >-
+        Approves the request (offline/cash received) and activates the plan. The optional body lets
+        the admin override which courts the subscription covers (≤ the plan limit, all belonging to
+        the venue); when omitted, the owner's requested court selection is used.
       operationId: adminActivateChangeRequest
       parameters:
         - name: id
@@ -5234,6 +5438,12 @@ paths:
           schema:
             type: integer
             format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateChangeRequest'
       responses:
         '200':
           description: The newly activated subscription
