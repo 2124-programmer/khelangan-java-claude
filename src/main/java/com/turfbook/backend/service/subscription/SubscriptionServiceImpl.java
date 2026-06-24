@@ -162,11 +162,9 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         BillingCycle cycle = parseCycle(req.getBillingCycle());
         boolean asTrial = Boolean.TRUE.equals(req.getAsTrial());
 
-        // Downgrade-vs-existing-courts guard (relevant if courts were added under a prior plan).
-        long courts = courtRepository.countByVenue(venue);
-        if (courts > plan.getMaxCourts()) {
-            throw new ConflictException(conflictMessage(plan, courts));
-        }
+        // Court-coverage model: the plan limit caps the COVERED courts (defaulted below, capped at
+        // maxCourts), not the venue's total court count — a venue may have more courts than the plan
+        // covers (the extras simply stay unbookable). So there is no total-court guard here.
 
         SubscriptionEntity sub = SubscriptionEntity.builder()
                 .owner(owner)
@@ -215,11 +213,8 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         }
         BillingCycle cycle = req.getBillingCycle() != null ? parseCycle(req.getBillingCycle()) : sub.getBillingCycle();
 
-        // Reject a downgrade that would strand existing courts.
-        long courts = courtRepository.countByVenue(sub.getVenue());
-        if (courts > plan.getMaxCourts()) {
-            throw new ConflictException(conflictMessage(plan, courts));
-        }
+        // Court-coverage model: maxCourts caps covered courts, not total courts. Coverage is
+        // trimmed to the new plan's limit below, so no total-court guard is needed here.
 
         // Preserve periodStart; recompute periodEnd for the (possibly new) plan/cycle.
         sub.setPlan(plan);
@@ -391,17 +386,46 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         SubscriptionPlanEntity plan = request.getRequestedPlan();
         BillingCycle cycle = request.getRequestedCycle();
 
-        long courts = courtRepository.countByVenue(venue);
-        if (courts > plan.getMaxCourts()) {
-            throw new ConflictException(conflictMessage(plan, courts));
+        // Court-coverage model: the plan limit caps the COVERED courts the owner selected — NOT the
+        // venue's total court count. A 2-court Starter covering 2 of 4 courts is valid; the other
+        // courts simply stay unbookable. Coverage is applied (defensively capped) below.
+        SubscriptionEntity currentSub = currentEntity(venue).orElse(null);
+        List<String> coverage = request.getCoveredCourtIds() == null
+                ? new ArrayList<>() : new ArrayList<>(request.getCoveredCourtIds());
+        if (coverage.size() > plan.getMaxCourts()) {
+            coverage = new ArrayList<>(coverage.subList(0, plan.getMaxCourts()));
         }
 
-        // Supersede the current subscription, if any, then activate the requested plan fresh.
-        currentEntity(venue).ifPresent(cur -> {
-            cur.setStatus(SubscriptionStatus.CANCELED);
-            subscriptionRepository.save(cur);
-        });
+        // Re-request on the SAME (already-paid) plan + cycle is a pure court-coverage change:
+        // update the live subscription's courts in place — keep the billing period and record no
+        // new charge. (A trial → paid, or any plan/cycle change, supersedes instead — see below.)
+        boolean coverageOnly = currentSub != null
+                && (currentSub.getStatus() == SubscriptionStatus.ACTIVE
+                    || currentSub.getStatus() == SubscriptionStatus.PAST_DUE)
+                && currentSub.getPlanCode() == plan.getCode()
+                && currentSub.getBillingCycle() == cycle;
 
+        if (coverageOnly) {
+            currentSub.setCoveredCourtIds(coverage);
+            SubscriptionEntity saved = subscriptionRepository.save(currentSub);
+            request.setStatus(SubscriptionChangeRequestEntity.Status.APPROVED);
+            request.setDecidedAt(dates.now());
+            changeRequestRepository.save(request);
+            recomputeVenueLive(venue);
+            recordLifecycle(venue, VenueLifecycleEventEntity.Type.SUBSCRIPTION_CHANGED, plan.getName() + " — courts updated");
+            notifyOwner(request.getOwner(), venue, String.format(
+                    "The courts covered by your %s plan for '%s' have been updated.", plan.getName(), venue.getName()));
+            log.info("Activated change request {} as in-place coverage update on subscription {} (plan {})",
+                    requestId, saved.getId(), plan.getCode());
+            return mapper.toDto(saved);
+        }
+
+        // Otherwise (trial → paid, or a different plan/cycle): supersede the current subscription
+        // and activate the requested plan fresh, with the selected courts as its coverage.
+        if (currentSub != null) {
+            currentSub.setStatus(SubscriptionStatus.CANCELED);
+            subscriptionRepository.save(currentSub);
+        }
         SubscriptionEntity sub = SubscriptionEntity.builder()
                 .owner(request.getOwner())
                 .venue(venue)
@@ -411,9 +435,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 .activationSource(ActivationSource.ADMIN_MANUAL)
                 .build();
         applySnapshotAndActivate(sub, plan, cycle, false);
-        // Apply the courts the owner selected at request time → exactly those become bookable.
-        sub.setCoveredCourtIds(request.getCoveredCourtIds() == null
-                ? new ArrayList<>() : new ArrayList<>(request.getCoveredCourtIds()));
+        sub.setCoveredCourtIds(coverage);
         sub = subscriptionRepository.save(sub);
 
         request.setStatus(SubscriptionChangeRequestEntity.Status.APPROVED);
@@ -424,7 +446,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         recomputeVenueLive(venue);
         recordLifecycle(venue, VenueLifecycleEventEntity.Type.SUBSCRIPTION_CHANGED, plan.getName());
         notifyOwner(request.getOwner(), venue,
-                String.format("Your upgrade to the %s plan for '%s' is now active.", plan.getName(), venue.getName()));
+                String.format("Your %s plan for '%s' is now active.", plan.getName(), venue.getName()));
         log.info("Activated change request {} -> subscription {} (plan {})", requestId, sub.getId(), plan.getCode());
         return mapper.toDto(sub);
     }
@@ -1208,12 +1230,6 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
             }
         }
         return out;
-    }
-
-    private String conflictMessage(SubscriptionPlanEntity plan, long courts) {
-        return String.format(
-                "This venue has %d courts but the %s plan allows only %d. Remove courts or choose a higher plan.",
-                courts, plan.getName(), plan.getMaxCourts());
     }
 
     private BillingCycle parseCycle(Object cycle) {

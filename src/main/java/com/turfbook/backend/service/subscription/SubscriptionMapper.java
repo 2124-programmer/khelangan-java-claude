@@ -66,6 +66,7 @@ public class SubscriptionMapper {
     }
 
     public Subscription toDto(SubscriptionEntity e) {
+        List<String> covered = e.getCoveredCourtIds() == null ? new ArrayList<>() : new ArrayList<>(e.getCoveredCourtIds());
         return new Subscription()
                 .id(e.getId())
                 .ownerId(e.getOwner().getId())
@@ -81,6 +82,8 @@ public class SubscriptionMapper {
                 .price(e.getPrice())
                 .currency(e.getCurrency())
                 .maxCourts(e.getMaxCourts())
+                .coveredCourtIds(covered)
+                .coveredCourtNames(resolveCourtNames(e.getVenue(), covered))
                 .features(new ArrayList<>(e.getFeatures()))
                 .activationSource(e.getActivationSource().name())
                 .createdAt(odt(e.getCreatedAt()))
@@ -134,12 +137,15 @@ public class SubscriptionMapper {
                 .reason(e.getReason());
     }
 
-    /** Map the request's covered court ids to readable names via the venue's courts. */
     private List<String> resolveCourtNames(SubscriptionChangeRequestEntity e) {
-        List<String> ids = e.getCoveredCourtIds();
-        if (ids == null || ids.isEmpty()) return new ArrayList<>();
+        return resolveCourtNames(e.getVenue(), e.getCoveredCourtIds());
+    }
+
+    /** Map covered court ids to readable names via the venue's courts (falls back to "Court {id}"). */
+    private List<String> resolveCourtNames(com.turfbook.backend.entity.VenueEntity venue, List<String> ids) {
+        if (ids == null || ids.isEmpty() || venue == null) return new ArrayList<>();
         Map<String, String> byId = new HashMap<>();
-        for (CourtEntity c : courtRepository.findByVenue(e.getVenue())) {
+        for (CourtEntity c : courtRepository.findByVenue(venue)) {
             byId.put(String.valueOf(c.getId()), c.getName());
         }
         List<String> names = new ArrayList<>(ids.size());

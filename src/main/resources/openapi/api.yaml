@@ -2147,6 +2147,14 @@ components:
           type: string
         maxCourts:
           type: integer
+        coveredCourtIds:
+          type: array
+          items: { type: string }
+          description: Court ids this subscription makes bookable (≤ maxCourts).
+        coveredCourtNames:
+          type: array
+          items: { type: string }
+          description: Human-readable names for coveredCourtIds.
         features:
           type: array
           items:
