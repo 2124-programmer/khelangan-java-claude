@@ -27,7 +27,7 @@ public interface SubscriptionChangeRequestRepository
             + "JOIN FETCH s.owner "
             + "JOIN FETCH s.requestedPlan "
             + "LEFT JOIN FETCH s.currentSubscription "
-            + "WHERE s.status = :status ORDER BY s.createdAt ASC")
+            + "WHERE s.status = :status ORDER BY s.createdAt DESC")
     List<SubscriptionChangeRequestEntity> findByStatusWithRefs(
             @Param("status") SubscriptionChangeRequestEntity.Status status);
 
