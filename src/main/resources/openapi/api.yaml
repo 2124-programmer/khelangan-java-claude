@@ -25,7 +25,7 @@ components:
     # ─── Auth ───────────────────────────────────────────────────────────────
     RegisterRequest:
       type: object
-      required: [name, email, phone, password, role]
+      required: [name, email, phone, password, role, acceptedTerms]
       properties:
         name:
           type: string
@@ -40,10 +40,13 @@ components:
           maxLength: 20
         password:
           type: string
-          minLength: 6
+          minLength: 8
         role:
           type: string
           enum: [PLAYER, OWNER]
+        acceptedTerms:
+          type: boolean
+          description: Must be true — the user accepted the Terms & Privacy Policy (DPDP consent).
 
     LoginRequest:
       type: object

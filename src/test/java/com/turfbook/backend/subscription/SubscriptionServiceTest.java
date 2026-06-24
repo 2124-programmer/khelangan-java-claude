@@ -245,7 +245,8 @@ class SubscriptionServiceTest {
                         .billingCycle(UpgradeRequestCreate.BillingCycleEnum.MONTHLY));
         assertThat(req.getStatus()).isEqualTo("PENDING");
 
-        Subscription activated = subscriptionService.adminActivateChangeRequest(req.getId(), adminId);
+        // null = no admin court override → activate with the owner's requested coverage (legacy behavior)
+        Subscription activated = subscriptionService.adminActivateChangeRequest(req.getId(), null, adminId);
         assertThat(activated.getPlanCode()).isEqualTo("PRO");
         assertThat(activated.getStatus()).isEqualTo("ACTIVE");
         assertThat(activated.getPeriodEnd()).isNotNull();

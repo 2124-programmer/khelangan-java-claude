@@ -104,6 +104,10 @@ public class UserEntity {
     @Builder.Default
     private boolean phoneVerified = false;
 
+    /** When the user accepted the Terms & Privacy Policy at sign-up (DPDP consent record). */
+    @Column(name = "accepted_terms_at")
+    private LocalDateTime acceptedTermsAt;
+
     @Column(name = "suspended_reason", length = 500)
     private String suspendedReason;
 

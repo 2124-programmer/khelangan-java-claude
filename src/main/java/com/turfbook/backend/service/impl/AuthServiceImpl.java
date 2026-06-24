@@ -67,6 +67,12 @@ public class AuthServiceImpl implements AuthService {
     private static final ConcurrentHashMap<Long, Long> cpWindowStart = new ConcurrentHashMap<>();
     private static final int CP_MAX_PER_HOUR = 10;
 
+    // Login throttle: lock an email after N failed credential attempts within a rolling window.
+    private static final ConcurrentHashMap<String, AtomicInteger> loginAttempts = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> loginWindowStart = new ConcurrentHashMap<>();
+    private static final int LOGIN_MAX_ATTEMPTS = 5;
+    private static final long LOGIN_WINDOW_MS = 900_000L; // 15 min
+
     // ── Register ─────────────────────────────────────────────────────────────
 
     @Override
@@ -75,6 +81,14 @@ public class AuthServiceImpl implements AuthService {
         log.info("AuthService.register() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
         String email = request.getEmail().toLowerCase().trim();
         String phone = request.getPhone() != null ? request.getPhone().trim() : null;
+
+        // Terms & Privacy consent is mandatory (DPDP) — reject if not explicitly accepted.
+        if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
+            throw new BadRequestException("You must accept the Terms & Privacy Policy to create an account.");
+        }
+        // Enforce the shared password policy (≥8 chars, at least one letter and one digit).
+        validatePasswordPolicy(request.getPassword());
+
         // Uniqueness is enforced against active_email/active_phone so freed (deleted/banned) identifiers
         // behave correctly: a DELETED account's active_* is NULL and no longer collides.
         if (userRepository.existsByActiveEmail(email)) {
@@ -102,6 +116,8 @@ public class AuthServiceImpl implements AuthService {
                 .activePhone(phone != null && !phone.isEmpty() ? phone : null)
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(role)
+                .phoneVerified(false) // phone verification deferred; set true later when OTP-verified
+                .acceptedTermsAt(LocalDateTime.now())
                 .build();
 
         user = userRepository.save(user);
@@ -123,6 +139,8 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse login(LoginRequest request) {
         log.info("AuthService.login() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
         String email = request.getEmail().toLowerCase().trim();
+        // Throttle brute-force: a locked email is rejected before we even hit the auth manager.
+        assertLoginNotLocked(email);
         Authentication authentication;
         try {
             authentication = authenticationManager.authenticate(
@@ -133,9 +151,12 @@ public class AuthServiceImpl implements AuthService {
             // (a ForbiddenException → 403, which also avoids the 401 refresh interceptor on the client).
             throw new ForbiddenException(blockedMessageFor(email));
         } catch (BadCredentialsException e) {
+            // Count the failure (generic message — never reveal which field was wrong).
+            recordLoginFailure(email);
             throw new UnauthorizedException("Invalid email or password");
         }
         SecurityContextHolder.getContext().setAuthentication(authentication);
+        clearLoginFailures(email); // successful auth resets the counter
 
         UserEntity user = userRepository.findByActiveEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
@@ -489,6 +510,37 @@ public class AuthServiceImpl implements AuthService {
         if (!hasLetter || !hasDigit) {
             throw new BadRequestException("Password must contain at least one letter and one digit.");
         }
+    }
+
+    /** Reject login if this email has exceeded the failed-attempt budget; surfaces a retry-after. */
+    private void assertLoginNotLocked(String email) {
+        Long start = loginWindowStart.get(email);
+        AtomicInteger attempts = loginAttempts.get(email);
+        if (start == null || attempts == null) return;
+        long elapsed = System.currentTimeMillis() - start;
+        if (elapsed > LOGIN_WINDOW_MS) { // window expired → forget
+            clearLoginFailures(email);
+            return;
+        }
+        if (attempts.get() >= LOGIN_MAX_ATTEMPTS) {
+            long retryAfter = (LOGIN_WINDOW_MS - elapsed + 999) / 1000;
+            throw new TooManyRequestsException("Too many attempts. Try again in " + retryAfter + "s.");
+        }
+    }
+
+    private void recordLoginFailure(String email) {
+        long now = System.currentTimeMillis();
+        Long start = loginWindowStart.get(email);
+        if (start == null || now - start > LOGIN_WINDOW_MS) {
+            loginWindowStart.put(email, now);
+            loginAttempts.put(email, new AtomicInteger(0));
+        }
+        loginAttempts.computeIfAbsent(email, k -> new AtomicInteger(0)).incrementAndGet();
+    }
+
+    private void clearLoginFailures(String email) {
+        loginAttempts.remove(email);
+        loginWindowStart.remove(email);
     }
 
     private void enforceChangePasswordRateLimit(Long userId) {
