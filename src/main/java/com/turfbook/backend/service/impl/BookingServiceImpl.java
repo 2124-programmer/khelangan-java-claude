@@ -138,6 +138,12 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalArgumentException("Court does not belong to the specified venue");
         }
 
+        // Court-level visibility gate: only courts the venue's live subscription covers (and that
+        // are active) are bookable. A non-covered/inactive court is rejected even on a live venue.
+        if (!subscriptionGate.isCourtBookable(venue.getId(), court.getId())) {
+            throw new ConflictException("This court is not currently available for booking.");
+        }
+
         // 4. Find existing slot (BLOCKED / old-AVAILABLE from prior cancellations) or null for fresh hours
         SlotEntity slot = slotRepository.findByCourtAndDateAndStartTime(court, date, startTime)
                 .orElse(null);
@@ -594,6 +600,12 @@ public class BookingServiceImpl implements BookingService {
 
         if (!court.getVenue().getId().equals(venue.getId())) {
             throw new IllegalArgumentException("Court does not belong to the specified venue");
+        }
+
+        // Court-level visibility gate: only courts the venue's live subscription covers (and that
+        // are active) are bookable. A non-covered/inactive court is rejected even on a live venue.
+        if (!subscriptionGate.isCourtBookable(venue.getId(), court.getId())) {
+            throw new ConflictException("This court is not currently available for booking.");
         }
 
         PlatformSettingsEntity settings = settingsRepository.findById(1L)

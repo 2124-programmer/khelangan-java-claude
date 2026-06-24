@@ -5,17 +5,21 @@ import com.turfbook.backend.dto.SubscriptionChangeRequest;
 import com.turfbook.backend.dto.SubscriptionPayment;
 import com.turfbook.backend.dto.SubscriptionPlan;
 import com.turfbook.backend.dto.VenueSubscriptionView;
+import com.turfbook.backend.entity.CourtEntity;
 import com.turfbook.backend.entity.SubscriptionChangeRequestEntity;
 import com.turfbook.backend.entity.SubscriptionEntity;
 import com.turfbook.backend.entity.SubscriptionPaymentEntity;
 import com.turfbook.backend.entity.SubscriptionPlanEntity;
+import com.turfbook.backend.repository.CourtRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Hand-written entity → DTO mapping for subscriptions. Period dates are stored as
@@ -27,6 +31,12 @@ public class SubscriptionMapper {
 
     /** India Standard Time has no DST, so a fixed offset is exact. */
     private static final ZoneOffset IST_OFFSET = ZoneOffset.of("+05:30");
+
+    private final CourtRepository courtRepository;
+
+    public SubscriptionMapper(CourtRepository courtRepository) {
+        this.courtRepository = courtRepository;
+    }
 
     private OffsetDateTime odt(LocalDateTime ldt) {
         return ldt == null ? null : ldt.atOffset(IST_OFFSET);
@@ -117,9 +127,24 @@ public class SubscriptionMapper {
                 .requestedPlanMaxCourts(plan.getMaxCourts())
                 .requestedCycle(e.getRequestedCycle().name())
                 .status(e.getStatus().name())
+                .coveredCourtIds(new ArrayList<>(e.getCoveredCourtIds() == null ? List.of() : e.getCoveredCourtIds()))
+                .coveredCourtNames(resolveCourtNames(e))
                 .createdAt(odt(e.getCreatedAt()))
                 .decidedAt(odt(e.getDecidedAt()))
                 .reason(e.getReason());
+    }
+
+    /** Map the request's covered court ids to readable names via the venue's courts. */
+    private List<String> resolveCourtNames(SubscriptionChangeRequestEntity e) {
+        List<String> ids = e.getCoveredCourtIds();
+        if (ids == null || ids.isEmpty()) return new ArrayList<>();
+        Map<String, String> byId = new HashMap<>();
+        for (CourtEntity c : courtRepository.findByVenue(e.getVenue())) {
+            byId.put(String.valueOf(c.getId()), c.getName());
+        }
+        List<String> names = new ArrayList<>(ids.size());
+        for (String id : ids) names.add(byId.getOrDefault(id, "Court " + id));
+        return names;
     }
 
     public List<SubscriptionChangeRequest> toChangeRequestDtos(List<SubscriptionChangeRequestEntity> list) {

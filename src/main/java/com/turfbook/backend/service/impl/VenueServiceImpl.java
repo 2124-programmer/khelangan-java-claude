@@ -105,6 +105,17 @@ public class VenueServiceImpl implements VenueService {
         // The approval thread is owner/admin-only context — never exposed to public/player calls.
         if (privileged) {
             dto.setApprovalComments(buildCommentDtos(venue));
+        } else {
+            // Player/public view: expose only player-bookable courts (active + covered by the
+            // venue's live subscription). If none are bookable the venue is effectively invisible
+            // to players, so 404 rather than return an empty, un-bookable listing.
+            Set<Long> bookable = new HashSet<>(subscriptionGate.bookableCourtIds(venue.getId()));
+            List<CourtDto> visible = dto.getCourts() == null ? new ArrayList<>()
+                    : dto.getCourts().stream().filter(c -> bookable.contains(c.getId())).collect(Collectors.toList());
+            if (visible.isEmpty()) {
+                throw new ResourceNotFoundException("Venue", "id", id);
+            }
+            dto.setCourts(visible);
         }
         return dto;
     }
@@ -284,12 +295,15 @@ public class VenueServiceImpl implements VenueService {
             addComment(venue, VenueApprovalCommentEntity.Action.APPROVED,
                     VenueApprovalCommentEntity.AuthorRole.ADMIN, request.getRejectionReason());
             recordLifecycle(venue, VenueLifecycleEventEntity.Type.APPROVED, null);
-            // Auto-start the 30-day trial (Starter for ≤2 courts, else the committed tier) → venue goes live.
-            subscriptionGate.startTrialForApprovedVenue(venue.getId());
+            // Approval no longer auto-grants bookability: the owner must explicitly start a free
+            // trial (or activate a paid plan) and choose which courts to cover before players can
+            // book. Recompute the live flag (stays off until that happens — no current subscription).
+            subscriptionGate.recomputeVenueLiveFlag(venue.getId());
             notificationService.createNotification(
                     venue.getOwner(),
                     "Venue Approved!",
-                    String.format("Your venue '%s' has been approved and is now live on TurfBook.", venue.getName()),
+                    String.format("Your venue '%s' has been approved. Start your free trial and pick the "
+                            + "courts you want to make bookable to go live.", venue.getName()),
                     NotificationEntity.NotificationType.SYSTEM
             );
         } else if (relisting) {

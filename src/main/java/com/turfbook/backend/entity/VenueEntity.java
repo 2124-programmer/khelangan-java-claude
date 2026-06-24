@@ -81,7 +81,8 @@ public class VenueEntity {
 
     /**
      * Tier the owner committed to at submission for venues over the free court threshold (>2).
-     * Null for free ≤2-court venues (which default to Starter for the auto-trial on approval).
+     * Null for ≤2-court venues. Approval no longer auto-starts a trial: after approval the owner
+     * self-activates a trial or a paid plan and chooses which courts to make bookable.
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "intended_plan_code", length = 20)
@@ -140,6 +141,16 @@ public class VenueEntity {
     @Column(nullable = false)
     @Builder.Default
     private boolean featured = false;
+
+    /**
+     * Denormalized count of player-bookable courts (active courts covered by the current
+     * live subscription), recomputed on every subscription/court transition. The player feed
+     * requires status=LIVE AND subscriptionActive AND this count &gt; 0, so a venue with no
+     * covered courts is omitted from discovery entirely.
+     */
+    @Column(name = "bookable_court_count", nullable = false)
+    @Builder.Default
+    private int bookableCourtCount = 0;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

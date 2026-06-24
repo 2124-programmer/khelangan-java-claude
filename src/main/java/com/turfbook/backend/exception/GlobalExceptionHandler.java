@@ -53,6 +53,27 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), request, null);
     }
 
+    /**
+     * Subscription/trial eligibility failures carry a stable machine code (NO_COURTS,
+     * TRIAL_ALREADY_USED, TOO_MANY_COURTS, …) so the owner client can branch on the reason.
+     * The code is surfaced in the {@code error} field; the message drives the toast.
+     */
+    @ExceptionHandler(SubscriptionEligibilityException.class)
+    public ResponseEntity<ErrorResponse> handleSubscriptionEligibility(SubscriptionEligibilityException ex,
+                                                                        HttpServletRequest request) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("code", ex.getCode());
+        ErrorResponse body = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error(ex.getCode())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .details(details)
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex,
                                                           HttpServletRequest request) {

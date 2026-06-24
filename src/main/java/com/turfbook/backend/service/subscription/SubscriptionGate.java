@@ -3,6 +3,7 @@ package com.turfbook.backend.service.subscription;
 import com.turfbook.backend.entity.FeatureCode;
 import com.turfbook.backend.entity.SubscriptionEntity;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -46,6 +47,16 @@ public interface SubscriptionGate {
 
     /** Recompute and persist the venue's denormalized live flag, placement weight, and featured badge. */
     void recomputeVenueLiveFlag(Long venueId);
+
+    /**
+     * Player-bookable court ids for a venue: active courts whose id is covered by the venue's
+     * current live-gating subscription. Empty when the venue is not LIVE or holds no live
+     * subscription. The player feed and venue-detail projection use this to hide non-bookable courts.
+     */
+    List<Long> bookableCourtIds(Long venueId);
+
+    /** True when the given court is currently bookable by players (active + covered + venue live). */
+    boolean isCourtBookable(Long venueId, Long courtId);
 
     /**
      * Auto-start a 30-day trial when a venue is approved. Resolves the tier from the venue's

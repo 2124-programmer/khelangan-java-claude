@@ -2278,13 +2278,23 @@ components:
         status:
           type: string
           description: PENDING, APPROVED, REJECTED, or CANCELLED
+        coveredCourtIds:
+          type: array
+          items: { type: string }
+          description: Court ids the owner selected to cover with the requested plan.
+        coveredCourtNames:
+          type: array
+          items: { type: string }
+          description: Human-readable names for coveredCourtIds (admin display).
         createdAt:
           type: string
           format: date-time
+          description: When the owner submitted the request.
         decidedAt:
           type: string
           format: date-time
           nullable: true
+          description: When an admin approved/rejected the request (null while pending).
         reason:
           type: string
 
@@ -2432,6 +2442,103 @@ components:
       properties:
         reason:
           type: string
+
+    # ─── Owner subscription purchase + court coverage ──────────────────────────
+    PlanOption:
+      type: object
+      description: >
+        One purchasable option shown in the owner plan sheet: the self-serve Trial plus the paid
+        tiers. courtLimit is the cap on how many courts the owner may cover under this plan.
+      required: [code, name, kind, price, courtLimit, durationDays, oncePerVenue, available]
+      properties:
+        code: { type: string, enum: [TRIAL, STARTER, GROWTH, PRO, PRO_MAX] }
+        name: { type: string }
+        kind: { type: string, enum: [TRIAL, PAID] }
+        price: { type: integer, description: "₹, 0 for Trial" }
+        courtLimit: { type: integer }
+        durationDays: { type: integer }
+        oncePerVenue: { type: boolean, description: "True for Trial" }
+        available: { type: boolean, description: "False when this option can't be chosen now (e.g. Trial already used)." }
+        unavailableReason: { type: string, nullable: true }
+
+    SelectableCourt:
+      type: object
+      description: A court rendered in the court-selection sheet (with active + currently-covered flags).
+      required: [courtId, name, isActive, isCovered]
+      properties:
+        courtId: { type: string }
+        name: { type: string }
+        sport: { type: string, nullable: true }
+        isActive: { type: boolean }
+        isCovered: { type: boolean, description: "Already covered by the current subscription." }
+
+    PendingRequestRef:
+      type: object
+      properties:
+        requestId: { type: string }
+        planCode: { type: string }
+        planName: { type: string, nullable: true }
+        coveredCourtIds: { type: array, items: { type: string } }
+        coveredCourtNames: { type: array, items: { type: string } }
+        requestedAt: { type: string, format: date-time, nullable: true }
+
+    VenueSubscriptionState:
+      type: object
+      description: >
+        Owner-facing subscription state + purchase eligibility for one venue, driving the
+        Subscription card and the plan/court-selection sheets. Server-authoritative.
+      required: [venueId, status, totalCourts, bookableCourts, trialUsed, canStartTrial, canPurchasePaid, blockReason, coveredCourtIds]
+      properties:
+        venueId: { type: string }
+        kind: { type: string, enum: [TRIAL, PAID], nullable: true }
+        planCode: { type: string, nullable: true }
+        planName: { type: string, nullable: true }
+        status: { type: string, enum: [TRIAL, ACTIVE, EXPIRED, CANCELED, NONE] }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        courtLimit: { type: integer, nullable: true }
+        coveredCourtIds: { type: array, items: { type: string } }
+        coveredCourtNames: { type: array, items: { type: string } }
+        updatedAt: { type: string, format: date-time, nullable: true, description: "When the current subscription last changed (drives the owner 'last updated' line)." }
+        totalCourts: { type: integer }
+        bookableCourts: { type: integer }
+        trialUsed: { type: boolean }
+        canStartTrial: { type: boolean }
+        canPurchasePaid: { type: boolean }
+        blockReason: { type: string, enum: [NONE, NO_COURTS] }
+        pendingRequest:
+          allOf:
+            - $ref: '#/components/schemas/PendingRequestRef'
+          nullable: true
+
+    CourtSelectionBody:
+      type: object
+      required: [courtIds]
+      properties:
+        courtIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+
+    PaidRequestBody:
+      type: object
+      required: [planCode, courtIds]
+      properties:
+        planCode: { type: string, enum: [STARTER, GROWTH, PRO, PRO_MAX] }
+        courtIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+
+    SubscriptionRequestView:
+      type: object
+      properties:
+        requestId: { type: string }
+        venueId: { type: string }
+        planCode: { type: string }
+        coveredCourtIds: { type: array, items: { type: string } }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED] }
+        requestedAt: { type: string, format: date-time }
 
 paths:
   # ─── Auth ─────────────────────────────────────────────────────────────────
@@ -5214,3 +5321,146 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionChangeRequest'
+
+  # ─── Owner subscription purchase + court coverage ───────────────────────────
+  /api/v1/owner/venues/{venueId}/plan-options:
+    get:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Purchasable plan options for a venue (Trial + paid tiers, with eligibility) (Owner)
+      operationId: getOwnerVenuePlanOptions
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Plan options
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanOption'
+
+  /api/v1/owner/venues/{venueId}/subscription-state:
+    get:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Court-coverage subscription state + purchase eligibility for a venue (Owner)
+      operationId: getOwnerVenueSubscriptionState
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Venue subscription state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionState'
+
+  /api/v1/owner/venues/{venueId}/selectable-courts:
+    get:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Courts for the coverage-selection sheet, with active + covered flags (Owner)
+      operationId: getOwnerVenueSelectableCourts
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Selectable courts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SelectableCourt'
+
+  /api/v1/owner/venues/{venueId}/trial:
+    post:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Start the self-serve 30-day trial for the selected courts (Owner)
+      operationId: startVenueTrial
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourtSelectionBody'
+      responses:
+        '200':
+          description: Trial started; selected courts are now bookable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionState'
+        '409':
+          description: Not eligible (typed code in error/details.code)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/owner/venues/{venueId}/subscription-requests:
+    post:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Request a paid plan with selected courts; admin activates offline (Owner)
+      operationId: createVenueSubscriptionRequest
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaidRequestBody'
+      responses:
+        '201':
+          description: Pending subscription request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionRequestView'
+        '409':
+          description: Not eligible (typed code in error/details.code)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/owner/venues/{venueId}/subscription-requests/cancel:
+    post:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Cancel the venue's pending paid-plan request (Owner)
+      operationId: cancelVenueSubscriptionRequest
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Request cancelled; updated subscription state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionState'
+        '409':
+          description: No pending request to cancel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

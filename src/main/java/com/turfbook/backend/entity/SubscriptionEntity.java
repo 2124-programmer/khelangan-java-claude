@@ -66,6 +66,18 @@ public class SubscriptionEntity {
     @Builder.Default
     private List<String> features = new ArrayList<>();
 
+    /**
+     * The specific courts this subscription makes bookable by players (court ids as strings,
+     * count ≤ {@link #maxCourts}). A court is bookable only if it is active AND its id is in this
+     * list AND the subscription is live-gating. Empty means no court is bookable (venue stays
+     * hidden from the player feed). Set when the owner starts a trial / an admin activates a
+     * paid request with the owner's selected courts.
+     */
+    @Convert(converter = JsonListConverter.class)
+    @Column(name = "covered_court_ids", columnDefinition = "json")
+    @Builder.Default
+    private List<String> coveredCourtIds = new ArrayList<>();
+
     // ─── Lifecycle ──────────────────────────────────────────────────────────
     @Enumerated(EnumType.STRING)
     @Column(name = "billing_cycle", nullable = false, length = 10)

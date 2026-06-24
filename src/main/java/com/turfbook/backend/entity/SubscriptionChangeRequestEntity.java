@@ -1,10 +1,13 @@
 package com.turfbook.backend.entity;
 
+import com.turfbook.backend.entity.converter.JsonListConverter;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * An owner-initiated upgrade/plan-change request. Admin activates it (applying the
@@ -50,6 +53,16 @@ public class SubscriptionChangeRequestEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "requested_cycle", nullable = false, length = 10)
     private BillingCycle requestedCycle;
+
+    /**
+     * Courts the owner selected to cover at request time (court ids as strings, count ≤ the
+     * requested plan's maxCourts). Applied onto the activated subscription's coveredCourtIds
+     * when an admin approves the request — so the owner's court choice survives the approval gap.
+     */
+    @Convert(converter = JsonListConverter.class)
+    @Column(name = "covered_court_ids", columnDefinition = "json")
+    @Builder.Default
+    private List<String> coveredCourtIds = new ArrayList<>();
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 12)

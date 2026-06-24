@@ -33,10 +33,12 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
     List<Object[]> aggregateByOwnerIds(@Param("ownerIds") java.util.Collection<Long> ownerIds);
 
     // A venue is shown to players only when approved (status LIVE) AND it holds an
-    // active/trialing subscription (denormalized subscriptionActive flag). Ordering applies
-    // the active plan's placementWeight (0 when no PRIORITY_PLACEMENT) on top of rating.
+    // active/trialing subscription (denormalized subscriptionActive flag) AND that subscription
+    // covers at least one active court (bookableCourtCount > 0) — a venue with no bookable court
+    // is omitted from discovery entirely. Ordering applies the active plan's placementWeight
+    // (0 when no PRIORITY_PLACEMENT) on top of rating.
     @Query("SELECT DISTINCT v FROM VenueEntity v LEFT JOIN v.sports s WHERE " +
-           "v.status = :liveStatus AND v.subscriptionActive = true AND " +
+           "v.status = :liveStatus AND v.subscriptionActive = true AND v.bookableCourtCount > 0 AND " +
            "(:city IS NULL OR LOWER(v.city) = LOWER(:city)) AND " +
            "(:sportId IS NULL OR s.id = :sportId) AND " +
            "(:search IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :search, '%')) " +

@@ -1,8 +1,15 @@
 package com.turfbook.backend.service.subscription;
 
+import com.turfbook.backend.dto.CourtSelectionBody;
+import com.turfbook.backend.dto.PaidRequestBody;
+import com.turfbook.backend.dto.PendingRequestRef;
+import com.turfbook.backend.dto.PlanOption;
 import com.turfbook.backend.dto.RejectChangeRequest;
+import com.turfbook.backend.dto.SelectableCourt;
 import com.turfbook.backend.dto.Subscription;
 import com.turfbook.backend.dto.SubscriptionChangeRequest;
+import com.turfbook.backend.dto.SubscriptionRequestView;
+import com.turfbook.backend.dto.VenueSubscriptionState;
 import com.turfbook.backend.dto.SubscriptionCreateRequest;
 import com.turfbook.backend.dto.SubscriptionEditRequest;
 import com.turfbook.backend.dto.SubscriptionPage;
@@ -20,6 +27,7 @@ import com.turfbook.backend.dto.VenueSubscriptionRow;
 import com.turfbook.backend.dto.VenueSubscriptionView;
 import com.turfbook.backend.entity.ActivationSource;
 import com.turfbook.backend.entity.BillingCycle;
+import com.turfbook.backend.entity.CourtEntity;
 import com.turfbook.backend.entity.FeatureCode;
 import com.turfbook.backend.entity.NotificationEntity;
 import com.turfbook.backend.entity.PlanCode;
@@ -36,6 +44,7 @@ import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.CourtLimitExceededException;
 import com.turfbook.backend.exception.ForbiddenException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
+import com.turfbook.backend.exception.SubscriptionEligibilityException;
 import com.turfbook.backend.repository.CourtRepository;
 import com.turfbook.backend.repository.SubscriptionChangeRequestRepository;
 import com.turfbook.backend.repository.SubscriptionPaymentRepository;
@@ -53,13 +62,20 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -74,6 +90,8 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     private static final int ADMIN_HISTORY_LIMIT = 10;
     /** A subscription within this many days of its end date rolls up as EXPIRING in the table. */
     private static final int EXPIRING_SOON_DAYS = 7;
+    /** The self-serve trial covers at most this many courts, regardless of plan tuning. */
+    private static final int TRIAL_COURT_LIMIT = 2;
     /** India Standard Time has no DST, so a fixed offset is exact. */
     private static final ZoneOffset IST_OFFSET = ZoneOffset.of("+05:30");
 
@@ -160,6 +178,9 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 .notes(req.getNotes())
                 .build();
         applySnapshotAndActivate(sub, plan, cycle, asTrial);
+        // Admin manual create carries no court picker — default coverage to the venue's active
+        // courts (capped at the plan limit) so the venue stays bookable as it did pre-coverage.
+        sub.setCoveredCourtIds(defaultCoverage(venue, plan.getMaxCourts()));
         sub = subscriptionRepository.save(sub);
 
         recordPayment(sub, asTrial ? 0 : sub.getPrice(), req.getPaymentMethod(), req.getPaymentReference(), adminId);
@@ -215,6 +236,12 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
             sub.setPeriodEnd(dates.periodEnd(start, cycle));
         }
         if (req.getNotes() != null) sub.setNotes(req.getNotes());
+        // Keep the owner's court selection, but never exceed the (possibly new) plan limit; seed a
+        // default if this subscription predates court coverage.
+        List<String> cov = new ArrayList<>(sub.getCoveredCourtIds() == null ? List.of() : sub.getCoveredCourtIds());
+        if (cov.isEmpty()) cov = defaultCoverage(sub.getVenue(), plan.getMaxCourts());
+        else if (cov.size() > plan.getMaxCourts()) cov = new ArrayList<>(cov.subList(0, plan.getMaxCourts()));
+        sub.setCoveredCourtIds(cov);
         sub = subscriptionRepository.save(sub);
 
         recomputeVenueLive(sub.getVenue());
@@ -384,6 +411,9 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 .activationSource(ActivationSource.ADMIN_MANUAL)
                 .build();
         applySnapshotAndActivate(sub, plan, cycle, false);
+        // Apply the courts the owner selected at request time → exactly those become bookable.
+        sub.setCoveredCourtIds(request.getCoveredCourtIds() == null
+                ? new ArrayList<>() : new ArrayList<>(request.getCoveredCourtIds()));
         sub = subscriptionRepository.save(sub);
 
         request.setStatus(SubscriptionChangeRequestEntity.Status.APPROVED);
@@ -466,6 +496,181 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 NotificationEntity.NotificationType.SYSTEM);
 
         return mapper.toChangeRequestDto(entity);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Owner: court-coverage purchase (self-serve trial + paid request)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PlanOption> ownerListPlanOptions(Long venueId, Long ownerId) {
+        VenueEntity venue = requireOwnedVenue(venueId, ownerId);
+        int totalCourts = (int) courtRepository.countByVenue(venue);
+        boolean hasCurrent = currentEntity(venue).isPresent();
+        boolean trialUsed = trialUsed(venue);
+        boolean pending = changeRequestRepository.existsByVenueAndStatus(
+                venue, SubscriptionChangeRequestEntity.Status.PENDING);
+
+        List<PlanOption> options = new ArrayList<>();
+
+        // Trial (self-serve), shown first.
+        SubscriptionPlanEntity starter = planRepository.findByCode(PlanCode.STARTER).orElse(null);
+        int trialDays = starter != null ? starter.getTrialDays() : 30;
+        PlanOption trial = new PlanOption()
+                .code(PlanOption.CodeEnum.TRIAL)
+                .name("Trial")
+                .kind(PlanOption.KindEnum.TRIAL)
+                .price(0)
+                .courtLimit(TRIAL_COURT_LIMIT)
+                .durationDays(trialDays)
+                .oncePerVenue(true)
+                .available(totalCourts > 0 && !hasCurrent && !trialUsed);
+        if (totalCourts == 0) trial.setUnavailableReason("Add at least one court first.");
+        else if (trialUsed) trial.setUnavailableReason("Trial already used.");
+        else if (hasCurrent) trial.setUnavailableReason("A subscription is already active.");
+        options.add(trial);
+
+        // Paid tiers, in catalog order.
+        for (SubscriptionPlanEntity plan : planRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc()) {
+            PlanOption opt = new PlanOption()
+                    .code(PlanOption.CodeEnum.fromValue(plan.getCode().name()))
+                    .name(plan.getName())
+                    .kind(PlanOption.KindEnum.PAID)
+                    .price(plan.getPriceMonthly())
+                    .courtLimit(plan.getMaxCourts())
+                    .durationDays(30)
+                    .oncePerVenue(false)
+                    .available(totalCourts > 0 && !pending);
+            if (totalCourts == 0) opt.setUnavailableReason("Add at least one court first.");
+            else if (pending) opt.setUnavailableReason("A plan request is already pending.");
+            options.add(opt);
+        }
+        return options;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public VenueSubscriptionState ownerGetVenueSubscriptionState(Long venueId, Long ownerId) {
+        return buildState(requireOwnedVenue(venueId, ownerId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SelectableCourt> ownerListSelectableCourts(Long venueId, Long ownerId) {
+        VenueEntity venue = requireOwnedVenue(venueId, ownerId);
+        Set<String> covered = currentEntity(venue)
+                .map(s -> new HashSet<>(s.getCoveredCourtIds()))
+                .orElseGet(HashSet::new);
+        return courtRepository.findByVenue(venue).stream()
+                .sorted(Comparator.comparing(CourtEntity::getId))
+                .map(c -> new SelectableCourt()
+                        .courtId(String.valueOf(c.getId()))
+                        .name(c.getName())
+                        .sport(c.getSport() != null ? c.getSport().getName() : null)
+                        .isActive(c.isActive())
+                        .isCovered(covered.contains(String.valueOf(c.getId()))))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public VenueSubscriptionState ownerStartTrial(Long venueId, Long ownerId, CourtSelectionBody body) {
+        VenueEntity venue = requireOwnedVenue(venueId, ownerId);
+        List<CourtEntity> courts = courtRepository.findByVenue(venue);
+        if (courts.isEmpty()) {
+            throw new SubscriptionEligibilityException("NO_COURTS",
+                    "Add at least one court before purchasing a subscription.");
+        }
+        if (currentEntity(venue).isPresent()) {
+            throw new SubscriptionEligibilityException("ACTIVE_SUBSCRIPTION_EXISTS",
+                    "This venue already has an active subscription.");
+        }
+        if (trialUsed(venue)) {
+            throw new SubscriptionEligibilityException("TRIAL_ALREADY_USED",
+                    "The free trial has already been used for this venue.");
+        }
+        List<String> selected = validateSelection(body.getCourtIds(), courts, TRIAL_COURT_LIMIT);
+
+        SubscriptionPlanEntity plan = planRepository.findByCode(PlanCode.STARTER)
+                .orElseThrow(() -> new ResourceNotFoundException("SubscriptionPlan", "code", PlanCode.STARTER));
+        SubscriptionEntity sub = SubscriptionEntity.builder()
+                .owner(venue.getOwner())
+                .venue(venue)
+                .plan(plan)
+                .billingCycle(BillingCycle.MONTHLY)
+                .currency(plan.getCurrency())
+                .activationSource(ActivationSource.ADMIN_MANUAL)
+                .build();
+        applySnapshotAndActivate(sub, plan, BillingCycle.MONTHLY, true); // trial
+        sub.setMaxCourts(TRIAL_COURT_LIMIT);
+        sub.setCoveredCourtIds(new ArrayList<>(selected));
+        subscriptionRepository.save(sub);
+
+        recomputeVenueLive(venue);
+        recordLifecycle(venue, VenueLifecycleEventEntity.Type.TRIAL_ACTIVATED, "Trial");
+        notifyOwner(venue.getOwner(), venue, String.format(
+                "Your free trial for '%s' has started — %d court(s) are now live for players.",
+                venue.getName(), selected.size()));
+        log.info("Owner {} started trial for venue {} covering {} court(s)", ownerId, venueId, selected.size());
+        return buildState(venue);
+    }
+
+    @Override
+    @Transactional
+    public SubscriptionRequestView ownerCreateSubscriptionRequest(Long venueId, Long ownerId, PaidRequestBody body) {
+        VenueEntity venue = requireOwnedVenue(venueId, ownerId);
+        List<CourtEntity> courts = courtRepository.findByVenue(venue);
+        if (courts.isEmpty()) {
+            throw new SubscriptionEligibilityException("NO_COURTS",
+                    "Add at least one court before purchasing a subscription.");
+        }
+        if (changeRequestRepository.existsByVenueAndStatus(venue, SubscriptionChangeRequestEntity.Status.PENDING)) {
+            throw new SubscriptionEligibilityException("REQUEST_ALREADY_PENDING",
+                    "There is already a pending plan request for this venue.");
+        }
+        PlanCode code = PlanCode.valueOf(body.getPlanCode().getValue());
+        SubscriptionPlanEntity plan = planRepository.findByCode(code)
+                .filter(SubscriptionPlanEntity::isActive)
+                .orElseThrow(() -> new BadRequestException("That plan is not available."));
+        List<String> selected = validateSelection(body.getCourtIds(), courts, plan.getMaxCourts());
+
+        SubscriptionChangeRequestEntity entity = SubscriptionChangeRequestEntity.builder()
+                .owner(venue.getOwner())
+                .venue(venue)
+                .currentSubscription(currentEntity(venue).orElse(null))
+                .requestedPlan(plan)
+                .requestedCycle(BillingCycle.MONTHLY)
+                .coveredCourtIds(new ArrayList<>(selected))
+                .status(SubscriptionChangeRequestEntity.Status.PENDING)
+                .build();
+        entity = changeRequestRepository.save(entity);
+
+        notificationService.notifyAdmins(
+                "New subscription request",
+                String.format("%s requested '%s' (%d court(s)) for venue '%s'.",
+                        venue.getOwner() != null ? venue.getOwner().getName() : "An owner",
+                        plan.getName(), selected.size(), venue.getName()),
+                NotificationEntity.NotificationType.SYSTEM);
+
+        log.info("Owner {} requested paid plan {} for venue {} covering {} court(s)",
+                ownerId, plan.getCode(), venueId, selected.size());
+        return buildRequestView(entity);
+    }
+
+    @Override
+    @Transactional
+    public VenueSubscriptionState ownerCancelSubscriptionRequest(Long venueId, Long ownerId) {
+        VenueEntity venue = requireOwnedVenue(venueId, ownerId);
+        SubscriptionChangeRequestEntity pending = changeRequestRepository
+                .findFirstByVenueAndStatusOrderByCreatedAtDesc(venue, SubscriptionChangeRequestEntity.Status.PENDING)
+                .orElseThrow(() -> new SubscriptionEligibilityException(
+                        "NO_PENDING_REQUEST", "There is no pending plan request to cancel."));
+        pending.setStatus(SubscriptionChangeRequestEntity.Status.CANCELLED);
+        pending.setDecidedAt(dates.now());
+        changeRequestRepository.save(pending);
+        log.info("Owner {} cancelled subscription request {} for venue {}", ownerId, pending.getId(), venueId);
+        return buildState(venue);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -559,6 +764,30 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Long> bookableCourtIds(Long venueId) {
+        VenueEntity venue = venueRepository.findById(venueId).orElse(null);
+        if (venue == null || venue.getStatus() != VenueEntity.VenueStatus.LIVE) {
+            return List.of();
+        }
+        return liveSubscription(venue).map(sub -> {
+            Set<String> covered = new HashSet<>(sub.getCoveredCourtIds());
+            if (covered.isEmpty()) return List.<Long>of();
+            return courtRepository.findByVenue(venue).stream()
+                    .filter(CourtEntity::isActive)
+                    .map(CourtEntity::getId)
+                    .filter(id -> covered.contains(String.valueOf(id)))
+                    .toList();
+        }).orElse(List.of());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isCourtBookable(Long venueId, Long courtId) {
+        return courtId != null && bookableCourtIds(venueId).contains(courtId);
+    }
+
+    @Override
     @Transactional
     public void startTrialForApprovedVenue(Long venueId) {
         VenueEntity venue = venueRepository.findById(venueId)
@@ -640,23 +869,37 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         sub.setExpiryNotifiedThreshold(null);
     }
 
-    /** Recompute the venue's denormalized live flag + placement weight from its current sub. */
+    /** Recompute the venue's denormalized live flag + placement weight + bookable-court count. */
     private void recomputeVenueLive(VenueEntity venue) {
         Optional<SubscriptionEntity> live = liveSubscription(venue);
         boolean active = live.isPresent();
         venue.setSubscriptionActive(active);
         int weight = 0;
         boolean featured = false;
+        int bookable = 0;
         if (active) {
-            List<FeatureCode> features = live.get().getFeatureCodes();
+            SubscriptionEntity sub = live.get();
+            List<FeatureCode> features = sub.getFeatureCodes();
             if (features.contains(FeatureCode.PRIORITY_PLACEMENT)) {
-                weight = live.get().getPlan().getPlacementWeight();
+                weight = sub.getPlan().getPlacementWeight();
             }
             featured = features.contains(FeatureCode.FEATURED_BADGE);
+            bookable = countBookableCourts(venue, sub);
         }
         venue.setPlacementWeight(weight);
         venue.setFeatured(featured);
+        venue.setBookableCourtCount(bookable);
         venueRepository.save(venue);
+    }
+
+    /** Active courts of the venue whose id is covered by the given subscription. */
+    private int countBookableCourts(VenueEntity venue, SubscriptionEntity sub) {
+        Set<String> covered = new HashSet<>(sub.getCoveredCourtIds());
+        if (covered.isEmpty()) return 0;
+        return (int) courtRepository.findByVenue(venue).stream()
+                .filter(CourtEntity::isActive)
+                .filter(c -> covered.contains(String.valueOf(c.getId())))
+                .count();
     }
 
     private void recordPayment(SubscriptionEntity sub, int amount, Object methodEnum, String reference, Long adminId) {
@@ -818,6 +1061,132 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
             throw new ForbiddenException("This venue does not belong to you.");
         }
         return venue;
+    }
+
+    /**
+     * Default court coverage = the venue's active courts (capped at {@code maxCourts}), oldest id
+     * first. Used when an admin manually creates/edits a subscription with no explicit court pick.
+     */
+    private List<String> defaultCoverage(VenueEntity venue, int maxCourts) {
+        return courtRepository.findByVenue(venue).stream()
+                .filter(CourtEntity::isActive)
+                .sorted(Comparator.comparing(CourtEntity::getId))
+                .limit(Math.max(0, maxCourts))
+                .map(c -> String.valueOf(c.getId()))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /** True when the venue has ever held a subscription that carried a trial period (once-per-venue). */
+    private boolean trialUsed(VenueEntity venue) {
+        return subscriptionRepository.findByVenueOrderByIdDesc(venue).stream()
+                .anyMatch(s -> s.getTrialEnd() != null);
+    }
+
+    /**
+     * Validate a court-coverage selection: non-empty, within the limit, all belonging to the venue.
+     * Returns the de-duplicated ids (order preserved). Throws a typed 409 on each failure mode.
+     */
+    private List<String> validateSelection(List<String> courtIds, List<CourtEntity> venueCourts, int limit) {
+        if (courtIds == null || courtIds.isEmpty()) {
+            throw new SubscriptionEligibilityException("NO_COURTS_SELECTED", "Select at least one court.");
+        }
+        List<String> ids = new ArrayList<>(new LinkedHashSet<>(courtIds));
+        if (ids.size() > limit) {
+            throw new SubscriptionEligibilityException("TOO_MANY_COURTS",
+                    "You can cover at most " + limit + " court(s) on this plan.");
+        }
+        Set<String> venueCourtIds = new HashSet<>();
+        for (CourtEntity c : venueCourts) venueCourtIds.add(String.valueOf(c.getId()));
+        for (String id : ids) {
+            if (!venueCourtIds.contains(id)) {
+                throw new SubscriptionEligibilityException("COURT_NOT_IN_VENUE",
+                        "A selected court does not belong to this venue.");
+            }
+        }
+        return ids;
+    }
+
+    /** Build the owner court-coverage subscription state + purchase eligibility for a venue. */
+    private VenueSubscriptionState buildState(VenueEntity venue) {
+        SubscriptionEntity current = currentEntity(venue).orElse(null);
+        List<CourtEntity> courtList = courtRepository.findByVenue(venue);
+        Map<String, String> nameById = new HashMap<>();
+        for (CourtEntity c : courtList) nameById.put(String.valueOf(c.getId()), c.getName());
+        int totalCourts = courtList.size();
+        boolean trialUsed = trialUsed(venue);
+        SubscriptionChangeRequestEntity pending = changeRequestRepository
+                .findFirstByVenueAndStatusOrderByCreatedAtDesc(venue, SubscriptionChangeRequestEntity.Status.PENDING)
+                .orElse(null);
+
+        List<String> currentCovered = current != null
+                ? new ArrayList<>(current.getCoveredCourtIds()) : new ArrayList<>();
+        VenueSubscriptionState s = new VenueSubscriptionState()
+                .venueId(String.valueOf(venue.getId()))
+                .totalCourts(totalCourts)
+                .bookableCourts(venue.getBookableCourtCount())
+                .trialUsed(trialUsed)
+                .coveredCourtIds(currentCovered)
+                .coveredCourtNames(namesFor(nameById, currentCovered))
+                .blockReason(totalCourts == 0
+                        ? VenueSubscriptionState.BlockReasonEnum.NO_COURTS
+                        : VenueSubscriptionState.BlockReasonEnum.NONE)
+                .canStartTrial(totalCourts > 0 && current == null && !trialUsed)
+                .canPurchasePaid(totalCourts > 0 && pending == null);
+
+        if (current == null) {
+            s.setStatus(subscriptionRepository.existsByVenue(venue)
+                    ? VenueSubscriptionState.StatusEnum.EXPIRED
+                    : VenueSubscriptionState.StatusEnum.NONE);
+        } else {
+            boolean isTrial = current.getStatus() == SubscriptionStatus.TRIALING;
+            s.setKind(isTrial ? VenueSubscriptionState.KindEnum.TRIAL : VenueSubscriptionState.KindEnum.PAID);
+            s.setPlanCode(current.getPlanCode() != null ? current.getPlanCode().name() : null);
+            s.setPlanName(current.getPlanName());
+            s.setStatus(mapStateStatus(current.getStatus()));
+            s.setCourtLimit(current.getMaxCourts());
+            s.setStartDate(current.getPeriodStart() != null ? current.getPeriodStart().toLocalDate() : null);
+            LocalDateTime end = isTrial && current.getTrialEnd() != null ? current.getTrialEnd() : current.getPeriodEnd();
+            s.setEndDate(end != null ? end.toLocalDate() : null);
+            s.setUpdatedAt(odt(current.getUpdatedAt()));
+        }
+
+        if (pending != null) {
+            List<String> pendingCovered = new ArrayList<>(pending.getCoveredCourtIds());
+            s.setPendingRequest(new PendingRequestRef()
+                    .requestId(String.valueOf(pending.getId()))
+                    .planCode(pending.getRequestedPlan().getCode().name())
+                    .planName(pending.getRequestedPlan().getName())
+                    .coveredCourtIds(pendingCovered)
+                    .coveredCourtNames(namesFor(nameById, pendingCovered))
+                    .requestedAt(odt(pending.getCreatedAt())));
+        }
+        return s;
+    }
+
+    /** Map a list of court ids to readable names (falls back to "Court {id}" for stale ids). */
+    private List<String> namesFor(Map<String, String> nameById, List<String> ids) {
+        List<String> names = new ArrayList<>(ids.size());
+        for (String id : ids) names.add(nameById.getOrDefault(id, "Court " + id));
+        return names;
+    }
+
+    private VenueSubscriptionState.StatusEnum mapStateStatus(SubscriptionStatus status) {
+        return switch (status) {
+            case TRIALING -> VenueSubscriptionState.StatusEnum.TRIAL;
+            case ACTIVE, PAST_DUE -> VenueSubscriptionState.StatusEnum.ACTIVE;
+            case EXPIRED -> VenueSubscriptionState.StatusEnum.EXPIRED;
+            case CANCELED, VOIDED -> VenueSubscriptionState.StatusEnum.CANCELED;
+        };
+    }
+
+    private SubscriptionRequestView buildRequestView(SubscriptionChangeRequestEntity entity) {
+        return new SubscriptionRequestView()
+                .requestId(String.valueOf(entity.getId()))
+                .venueId(String.valueOf(entity.getVenue().getId()))
+                .planCode(entity.getRequestedPlan().getCode().name())
+                .coveredCourtIds(new ArrayList<>(entity.getCoveredCourtIds()))
+                .status(SubscriptionRequestView.StatusEnum.fromValue(entity.getStatus().name()))
+                .requestedAt(odt(entity.getCreatedAt()));
     }
 
     private void notifyOwner(UserEntity owner, VenueEntity venue, String message) {
