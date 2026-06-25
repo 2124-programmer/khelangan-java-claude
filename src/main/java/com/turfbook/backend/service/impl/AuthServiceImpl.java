@@ -55,8 +55,8 @@ public class AuthServiceImpl implements AuthService {
     private final UserMapper userMapper;
     private final MailService mailService;
 
-    private static final int OTP_EXPIRY_SEC       = 300; // 5 min
-    private static final int OTP_RESEND_SEC        = 60;
+    private static final int OTP_EXPIRY_SEC       = 600; // 10 min
+    private static final int OTP_RESEND_SEC        = 45;
     private static final int OTP_MAX_ATTEMPTS      = 5;
     private static final int OTP_MAX_PER_HOUR      = 5;
     private static final int RESET_TOKEN_EXPIRY_MIN = 15;
