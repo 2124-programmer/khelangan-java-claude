@@ -303,12 +303,26 @@ components:
         featured:
           type: boolean
           description: True when the venue's active plan grants the featured badge
+        isFavorite:
+          type: boolean
+          description: True when the current authenticated player has favorited this venue. Always false for anonymous requests.
+        # Best active owner-funded promo for this venue, or null. Owner-funded only — never a
+        # platform-funded discount. Plain $ref so the field reuses VenueOfferBadge directly.
+        activeOffer:
+          $ref: '#/components/schemas/VenueOfferBadge'
         createdAt:
           type: string
           format: date-time
           description: When the venue was submitted/registered (used for submission age and oldest-first ordering)
         subscription:
           $ref: '#/components/schemas/VenueSubscriptionSummary'
+
+    VenueOfferBadge:
+      type: object
+      description: Compact offer label for a discovery card (e.g. "10% off", "₹100 off").
+      properties:
+        label:
+          type: string
 
     VenueSubscriptionSummary:
       type: object
@@ -3351,6 +3365,36 @@ paths:
           description: Deleted
 
   # ─── Venues ───────────────────────────────────────────────────────────────
+  /api/v1/venues/{venueId}/favorite:
+    post:
+      tags: [Venues]
+      summary: Favorite a venue (Player)
+      operationId: favoriteVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Venue favorited (idempotent)
+    delete:
+      tags: [Venues]
+      summary: Unfavorite a venue (Player)
+      operationId: unfavoriteVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Venue unfavorited (idempotent)
+
   /api/v1/venues:
     get:
       tags: [Venues]
@@ -3370,6 +3414,26 @@ paths:
           in: query
           schema:
             type: string
+        - name: sort
+          in: query
+          description: Result ordering. DEFAULT applies plan placement + rating.
+          schema:
+            type: string
+            enum: [DEFAULT, PRICE_LOW, PRICE_HIGH, RATING, NEWEST]
+            default: DEFAULT
+        - name: minPrice
+          in: query
+          schema:
+            type: integer
+        - name: maxPrice
+          in: query
+          schema:
+            type: integer
+        - name: minRating
+          in: query
+          schema:
+            type: number
+            format: double
         - name: page
           in: query
           schema:

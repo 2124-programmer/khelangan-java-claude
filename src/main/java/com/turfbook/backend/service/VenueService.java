@@ -4,9 +4,14 @@ import com.turfbook.backend.dto.*;
 
 public interface VenueService {
 
-    VenueSummaryPage listVenues(String city, String sport, String search, int page, int size);
+    VenueSummaryPage listVenues(String city, String sport, String search, String sort,
+                                Integer minPrice, Integer maxPrice, Double minRating, int page, int size);
 
     VenueDetailDto getVenue(Long id);
+
+    void favoriteVenue(Long playerId, Long venueId);
+
+    void unfavoriteVenue(Long playerId, Long venueId);
 
     VenueDetailDto createVenue(Long ownerId, CreateVenueRequest request);
 

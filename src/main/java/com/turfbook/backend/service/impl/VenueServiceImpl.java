@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,8 @@ public class VenueServiceImpl implements VenueService {
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final SubscriptionDateCalculator subscriptionDates;
     private final VenueLifecycleEventRepository lifecycleEventRepository;
+    private final FavoriteRepository favoriteRepository;
+    private final CouponRepository couponRepository;
 
     /** Venues at/below this court count submit for approval free (Starter tier defaulted). */
     private static final int FREE_COURT_THRESHOLD = 2;
@@ -71,9 +74,10 @@ public class VenueServiceImpl implements VenueService {
 
     @Override
     @Transactional(readOnly = true)
-    public VenueSummaryPage listVenues(String city, String sport, String search, int page, int size) {
-        log.info("VenueService.listVenues() called - city={}, sport={}, search={}", city, sport, search);
-        Pageable pageable = PageRequest.of(page, size);
+    public VenueSummaryPage listVenues(String city, String sport, String search, String sort,
+                                       Integer minPrice, Integer maxPrice, Double minRating, int page, int size) {
+        log.info("VenueService.listVenues() called - city={}, sport={}, search={}, sort={}", city, sport, search, sort);
+        Pageable pageable = PageRequest.of(page, size, resolveVenueSort(sort));
         String cityParam = StringUtils.hasText(city) ? city : null;
         Long sportId = null;
         if (StringUtils.hasText(sport)) {
@@ -81,9 +85,45 @@ public class VenueServiceImpl implements VenueService {
         }
         String searchParam = StringUtils.hasText(search) ? search : null;
 
-        Page<VenueEntity> entityPage = venueRepository.findLiveVenues(
-                VenueEntity.VenueStatus.LIVE, cityParam, sportId, searchParam, pageable);
+        Page<VenueEntity> entityPage = venueRepository.findLiveVenuesFiltered(
+                VenueEntity.VenueStatus.LIVE, cityParam, sportId, searchParam,
+                minPrice, maxPrice, minRating, pageable);
         return toVenueSummaryPage(entityPage);
+    }
+
+    /** Maps the discovery sort option to a JPA Sort. DEFAULT replicates plan placement + rating. */
+    private Sort resolveVenueSort(String sort) {
+        String s = StringUtils.hasText(sort) ? sort : "DEFAULT";
+        return switch (s) {
+            case "PRICE_LOW" -> Sort.by(Sort.Direction.ASC, "pricePerHour");
+            case "PRICE_HIGH" -> Sort.by(Sort.Direction.DESC, "pricePerHour");
+            case "RATING" -> Sort.by(Sort.Direction.DESC, "ratingAverage");
+            case "NEWEST" -> Sort.by(Sort.Direction.DESC, "createdAt");
+            default -> Sort.by(Sort.Direction.DESC, "placementWeight")
+                    .and(Sort.by(Sort.Direction.DESC, "ratingAverage"))
+                    .and(Sort.by(Sort.Direction.DESC, "id"));
+        };
+    }
+
+    @Override
+    @Transactional
+    public void favoriteVenue(Long playerId, Long venueId) {
+        // Idempotent: a repeated favorite is a no-op (and the unique constraint backs it up).
+        if (favoriteRepository.existsByVenue_IdAndPlayer_Id(venueId, playerId)) return;
+        VenueEntity venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue not found"));
+        UserEntity player = userRepository.findById(playerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        favoriteRepository.save(FavoriteEntity.builder().venue(venue).player(player).build());
+        log.info("Venue favorited - venueId={}, playerId={}", venueId, playerId);
+    }
+
+    @Override
+    @Transactional
+    public void unfavoriteVenue(Long playerId, Long venueId) {
+        favoriteRepository.findByVenue_IdAndPlayer_Id(venueId, playerId)
+                .ifPresent(favoriteRepository::delete);
+        log.info("Venue unfavorited - venueId={}, playerId={}", venueId, playerId);
     }
 
     @Override
@@ -1201,12 +1241,52 @@ public class VenueServiceImpl implements VenueService {
     }
 
     private VenueSummaryPage toVenueSummaryPage(Page<VenueEntity> entityPage) {
+        List<VenueEntity> entities = entityPage.getContent();
+        Set<Long> favoriteVenueIds = currentPlayerFavoriteVenueIds();
+        Map<Long, String> offerLabels = activeOfferLabels(entities);
+        List<VenueSummaryDto> content = entities.stream()
+                .map(v -> {
+                    VenueSummaryDto d = venueMapper.toSummaryDto(v);
+                    d.setIsFavorite(favoriteVenueIds.contains(v.getId()));
+                    String offer = offerLabels.get(v.getId());
+                    if (offer != null) d.setActiveOffer(new VenueOfferBadge().label(offer));
+                    return d;
+                })
+                .toList();
         VenueSummaryPage dto = new VenueSummaryPage();
-        dto.setContent(entityPage.getContent().stream().map(venueMapper::toSummaryDto).toList());
+        dto.setContent(content);
         dto.setTotalElements(entityPage.getTotalElements());
         dto.setTotalPages(entityPage.getTotalPages());
         dto.setSize(entityPage.getSize());
         dto.setNumber(entityPage.getNumber());
         return dto;
+    }
+
+    /** Favorited venue ids for the current authenticated player; empty for anonymous/non-player. */
+    private Set<Long> currentPlayerFavoriteVenueIds() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof UserPrincipal up) {
+            return favoriteRepository.findVenueIdsByPlayerId(up.getId());
+        }
+        return Set.of();
+    }
+
+    /** venueId → best active owner-funded offer label, for the cards' offer badge (one query). */
+    private Map<Long, String> activeOfferLabels(List<VenueEntity> venues) {
+        if (venues.isEmpty()) return Map.of();
+        List<Long> ids = venues.stream().map(VenueEntity::getId).toList();
+        Map<Long, String> labels = new java.util.HashMap<>();
+        for (CouponEntity c : couponRepository.findActiveByVenueIds(ids, LocalDate.now())) {
+            if (c.getVenue() != null) {
+                labels.putIfAbsent(c.getVenue().getId(), offerLabel(c));
+            }
+        }
+        return labels;
+    }
+
+    private String offerLabel(CouponEntity c) {
+        return c.getDiscountType() == CouponEntity.DiscountType.PERCENT
+                ? c.getDiscountValue() + "% off"
+                : "₹" + c.getDiscountValue() + " off";
     }
 }

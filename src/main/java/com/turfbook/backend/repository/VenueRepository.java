@@ -52,6 +52,29 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
             Pageable pageable
     );
 
+    // Discovery with optional price/rating filters. Ordering is supplied via the Pageable's Sort
+    // (so the service can switch between default placement, price, rating, and newest) rather than
+    // a hardcoded ORDER BY. The bookable-court + live + active-subscription gate is unchanged.
+    @Query("SELECT DISTINCT v FROM VenueEntity v LEFT JOIN v.sports s WHERE " +
+           "v.status = :liveStatus AND v.subscriptionActive = true AND v.bookableCourtCount > 0 AND " +
+           "(:city IS NULL OR LOWER(v.city) = LOWER(:city)) AND " +
+           "(:sportId IS NULL OR s.id = :sportId) AND " +
+           "(:search IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+           "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+           "(:minPrice IS NULL OR v.pricePerHour >= :minPrice) AND " +
+           "(:maxPrice IS NULL OR v.pricePerHour <= :maxPrice) AND " +
+           "(:minRating IS NULL OR v.ratingAverage >= :minRating)")
+    Page<VenueEntity> findLiveVenuesFiltered(
+            @Param("liveStatus") VenueEntity.VenueStatus liveStatus,
+            @Param("city") String city,
+            @Param("sportId") Long sportId,
+            @Param("search") String search,
+            @Param("minPrice") Integer minPrice,
+            @Param("maxPrice") Integer maxPrice,
+            @Param("minRating") Double minRating,
+            Pageable pageable
+    );
+
     /**
      * Admin subscription table: every venue that has entered the pipeline (anything but DRAFT),
      * matched against name, city, owner name, or owner phone. Subscription-status filtering and

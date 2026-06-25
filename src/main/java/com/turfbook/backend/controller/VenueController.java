@@ -21,9 +21,10 @@ public class VenueController implements VenuesApi {
 
     @Override
     public ResponseEntity<VenueSummaryPage> listVenues(String city, String sport, String search,
-                                                        Integer page, Integer size) {
-        log.info("VenueController.listVenues() called - city={}, sport={}, search={}", city, sport, search);
-        return ResponseEntity.ok(venueService.listVenues(city, sport, search,
+                                                        String sort, Integer minPrice, Integer maxPrice,
+                                                        Double minRating, Integer page, Integer size) {
+        log.info("VenueController.listVenues() called - city={}, sport={}, search={}, sort={}", city, sport, search, sort);
+        return ResponseEntity.ok(venueService.listVenues(city, sport, search, sort, minPrice, maxPrice, minRating,
                 page != null ? page : 0, size != null ? size : 20));
     }
 
@@ -31,6 +32,24 @@ public class VenueController implements VenuesApi {
     public ResponseEntity<VenueDetailDto> getVenue(Long id) {
         log.info("VenueController.getVenue() called - id={}", id);
         return ResponseEntity.ok(venueService.getVenue(id));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('PLAYER')")
+    public ResponseEntity<Void> favoriteVenue(Long venueId) {
+        UserPrincipal principal = getPrincipal();
+        log.info("VenueController.favoriteVenue() called - venueId={}, playerId={}", venueId, principal.getId());
+        venueService.favoriteVenue(principal.getId(), venueId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Override
+    @PreAuthorize("hasRole('PLAYER')")
+    public ResponseEntity<Void> unfavoriteVenue(Long venueId) {
+        UserPrincipal principal = getPrincipal();
+        log.info("VenueController.unfavoriteVenue() called - venueId={}, playerId={}", venueId, principal.getId());
+        venueService.unfavoriteVenue(principal.getId(), venueId);
+        return ResponseEntity.noContent().build();
     }
 
     @Override

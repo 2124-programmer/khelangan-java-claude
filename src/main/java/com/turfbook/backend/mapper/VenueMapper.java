@@ -19,6 +19,7 @@ public interface VenueMapper {
     @Mapping(target = "featured", expression = "java(entity.isFeatured())")
     @Mapping(target = "courtCount", expression = "java((long)(entity.getCourts() != null ? entity.getCourts().size() : 0))")
     @Mapping(target = "createdAt", expression = "java(entity.getCreatedAt() != null ? entity.getCreatedAt().atOffset(java.time.ZoneOffset.UTC) : null)")
+    @Mapping(target = "isFavorite", ignore = true) // set in the service from the current player's favorites
     VenueSummaryDto toSummaryDto(VenueEntity entity);
 
     @Mapping(target = "ownerId", source = "owner.id")

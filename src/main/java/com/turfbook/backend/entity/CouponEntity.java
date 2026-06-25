@@ -22,6 +22,12 @@ public class CouponEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Null = platform-wide coupon. Set = an owner-funded promo scoped to one venue,
+    // which surfaces as the offer badge on that venue's discovery card.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "venue_id")
+    private VenueEntity venue;
+
     @Column(nullable = false, unique = true, length = 50)
     private String code;
 
