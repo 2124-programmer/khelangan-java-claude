@@ -18,6 +18,7 @@ import com.turfbook.backend.security.JwtTokenProvider;
 import com.turfbook.backend.service.AuthService;
 import com.turfbook.backend.service.MailService;
 import com.turfbook.backend.util.HashUtil;
+import org.springframework.beans.factory.annotation.Value;
 import com.turfbook.backend.util.LogMaskUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +62,10 @@ public class AuthServiceImpl implements AuthService {
     private static final int OTP_MAX_PER_HOUR      = 5;
     private static final int RESET_TOKEN_EXPIRY_MIN = 15;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /** DEV ONLY (app.otp.debug-log-codes): logs generated OTP codes so the flow can be tested without an inbox. */
+    @Value("${app.otp.debug-log-codes:false}")
+    private boolean otpDebugLogCodes;
 
     // Simple in-memory rate limiter for change-password (per userId, hourly window)
     private static final ConcurrentHashMap<Long, AtomicInteger> cpAttempts = new ConcurrentHashMap<>();
@@ -351,7 +356,10 @@ public class AuthServiceImpl implements AuthService {
 
         Optional<UserEntity> userOpt = userRepository.findByActiveEmail(email);
         if (userOpt.isEmpty()) {
-            return generic; // enumeration-safe: same response regardless
+            // Logged (server-side) for debugging; the response stays identical (enumeration-safe).
+            log.info("requestPasswordReset - no account for email={}, sending no mail (neutral response)",
+                    LogMaskUtil.maskEmail(email));
+            return generic;
         }
 
         // Per-hour send cap
@@ -359,6 +367,8 @@ public class AuthServiceImpl implements AuthService {
         long sentThisHour = otpRecordRepository.countByEmailAndPurposeAndCreatedAtAfter(
                 email, Purpose.PASSWORD_RESET, oneHourAgo);
         if (sentThisHour >= OTP_MAX_PER_HOUR) {
+            log.info("requestPasswordReset - hourly cap reached ({}/{}) for email={}, skipping send",
+                    sentThisHour, OTP_MAX_PER_HOUR, LogMaskUtil.maskEmail(email));
             return generic; // rate-limited but still generic response
         }
 
@@ -368,6 +378,8 @@ public class AuthServiceImpl implements AuthService {
         if (recent.isPresent()) {
             long secondsAgo = ChronoUnit.SECONDS.between(recent.get().getCreatedAt(), LocalDateTime.now());
             if (secondsAgo < OTP_RESEND_SEC) {
+                log.info("requestPasswordReset - cooldown active ({}s of {}s) for email={}, skipping send",
+                        secondsAgo, OTP_RESEND_SEC, LogMaskUtil.maskEmail(email));
                 return generic; // cooldown — still generic response
             }
         }
@@ -382,8 +394,15 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         otpRecordRepository.save(record);
 
+        if (otpDebugLogCodes) {
+            log.warn("[DEV] password reset OTP for email={} -> {} (disable app.otp.debug-log-codes in prod)",
+                    LogMaskUtil.maskEmail(email), otp);
+        }
+
+        // Async dispatch — actual SMTP success/failure is logged by MailService.
         mailService.sendPasswordResetOtp(email, otp, OTP_EXPIRY_SEC / 60);
-        log.info("AuthService.requestPasswordReset() - OTP sent to email={}", LogMaskUtil.maskEmail(email));
+        log.info("requestPasswordReset - reset email dispatched (async) for userId={}, email={}",
+                userOpt.get().getId(), LogMaskUtil.maskEmail(email));
         return generic;
     }
 
@@ -402,6 +421,8 @@ public class AuthServiceImpl implements AuthService {
         if (record.getAttempts() >= OTP_MAX_ATTEMPTS) {
             record.setUsed(true);
             otpRecordRepository.save(record);
+            log.info("verifyPasswordResetOtp - too many attempts ({}) for email={}, code locked",
+                    record.getAttempts(), LogMaskUtil.maskEmail(email));
             throw new UnauthorizedException("Too many incorrect attempts. Please request a new code.");
         }
 
@@ -410,6 +431,8 @@ public class AuthServiceImpl implements AuthService {
         if (!HashUtil.sha256Hex(request.getOtp()).equals(record.getCodeHash())) {
             otpRecordRepository.save(record);
             int remaining = OTP_MAX_ATTEMPTS - record.getAttempts();
+            log.info("verifyPasswordResetOtp - incorrect code for email={} (attempt {}/{}, {} left)",
+                    LogMaskUtil.maskEmail(email), record.getAttempts(), OTP_MAX_ATTEMPTS, remaining);
             throw new UnauthorizedException(remaining > 0
                     ? "Incorrect code. " + remaining + " attempt(s) remaining."
                     : "Incorrect code. No attempts remaining — please request a new code.");

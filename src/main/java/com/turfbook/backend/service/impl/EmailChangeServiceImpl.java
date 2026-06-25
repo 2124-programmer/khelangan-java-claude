@@ -20,9 +20,6 @@ import com.turfbook.backend.util.HashUtil;
 import com.turfbook.backend.util.LogMaskUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +44,8 @@ public class EmailChangeServiceImpl implements EmailChangeService {
     private static final int OTP_MAX_ATTEMPTS = 5;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private static final List<Status> ACTIVE_STATUSES = List.of(
+    /** Requests that haven't reached a final state — swept when the user starts a new request. */
+    private static final List<Status> UNRESOLVED_STATUSES = List.of(
             Status.PENDING_VERIFICATION, Status.PENDING);
 
     @Override
@@ -68,14 +66,10 @@ public class EmailChangeServiceImpl implements EmailChangeService {
             throw new ConflictException("This email address is already in use.");
         }
 
-        if (emailChangeRepo.existsByNewEmailAndStatusIn(newEmail, ACTIVE_STATUSES)) {
-            throw new ConflictException("Another account already has a pending request for this email.");
-        }
-
-        if (emailChangeRepo.existsByUserIdAndStatusIn(userId, ACTIVE_STATUSES)) {
-            throw new ConflictException(
-                    "You already have a pending email change request. Please wait for it to be processed.");
-        }
+        // Self-service: clear this user's prior unverified/legacy requests so they can always
+        // restart. An unverified request never reserves an address (real-email uniqueness is
+        // enforced above and re-checked at verification), so there's no cross-account block.
+        emailChangeRepo.deleteByUserIdAndStatusIn(userId, UNRESOLVED_STATUSES);
 
         // OTP cooldown check (reuse the EMAIL_CHANGE_VERIFY purpose)
         otpRecordRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(newEmail, Purpose.EMAIL_CHANGE_VERIFY)
@@ -155,12 +149,39 @@ public class EmailChangeServiceImpl implements EmailChangeService {
 
         otpRecord.setUsed(true);
         otpRecordRepository.save(otpRecord);
-
         entity.setVerifyUsed(true);
-        entity.setStatus(Status.PENDING);
+
+        // Self-service: ownership of the new address is now proven via OTP, so apply the change
+        // immediately — no admin review. Re-check uniqueness in case the address was claimed by
+        // someone else between the request and this verification.
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        if (userRepository.existsByActiveEmail(entity.getNewEmail())) {
+            entity.setStatus(Status.REJECTED);
+            entity.setReason("This email address is already in use.");
+            entity.setDecidedAt(LocalDateTime.now());
+            emailChangeRepo.save(entity);
+            throw new ConflictException("This email address is already in use.");
+        }
+
+        String oldEmail = user.getEmail();
+        user.setEmail(entity.getNewEmail());
+        user.setActiveEmail(entity.getNewEmail()); // keep login/uniqueness column in sync
+        // tokenVersion is intentionally NOT bumped: the user proved ownership via OTP and the JWT is
+        // bound to userId, so we keep them signed in (no surprise logout). Future logins use the new
+        // email. (Password changes still bump tokenVersion — email is an identifier, not a credential.)
+        userRepository.save(user);
+
+        entity.setStatus(Status.APPROVED);
+        entity.setDecidedAt(LocalDateTime.now());
         emailChangeRepo.save(entity);
 
-        log.info("EmailChangeService.verifyOtp() - request {} moved to PENDING", entity.getId());
+        // Confirm to the new address; also alert the old one as a security heads-up.
+        mailService.sendEmailChangeApproved(entity.getNewEmail(), entity.getNewEmail());
+        mailService.sendEmailChangeApproved(oldEmail, entity.getNewEmail());
+
+        log.info("EmailChangeService.verifyOtp() - email changed userId={} from={} to={} (self-service)",
+                user.getId(), LogMaskUtil.maskEmail(oldEmail), LogMaskUtil.maskEmail(entity.getNewEmail()));
         return toDto(entity);
     }
 
@@ -170,72 +191,6 @@ public class EmailChangeServiceImpl implements EmailChangeService {
         return emailChangeRepo.findTopByUserIdOrderByCreatedAtDesc(userId)
                 .map(this::toDto)
                 .orElse(null);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Page<EmailChangeRequestDto> adminList(String statusStr, int page, int size) {
-        Status status = Status.PENDING;
-        if (statusStr != null) {
-            try {
-                status = Status.valueOf(statusStr.toUpperCase());
-            } catch (IllegalArgumentException ignored) {}
-        }
-        PageRequest pageable = PageRequest.of(page, size, Sort.by("createdAt").ascending());
-        return emailChangeRepo.findByStatusOrderByCreatedAtAsc(status, pageable).map(this::toDto);
-    }
-
-    @Override
-    @Transactional
-    public EmailChangeRequestDto adminApprove(Long requestId) {
-        log.info("EmailChangeService.adminApprove() requestId={}", requestId);
-        EmailChangeRequestEntity entity = emailChangeRepo.findById(requestId)
-                .orElseThrow(() -> new ResourceNotFoundException("EmailChangeRequest", "id", requestId));
-
-        if (entity.getStatus() != Status.PENDING) {
-            throw new BadRequestException("Only PENDING requests can be approved.");
-        }
-
-        UserEntity user = userRepository.findById(entity.getUserId())
-                .orElseThrow(() -> new ResourceNotFoundException("User", "id", entity.getUserId()));
-
-        String oldEmail = user.getEmail();
-        user.setEmail(entity.getNewEmail());
-        user.setActiveEmail(entity.getNewEmail()); // keep login/uniqueness column in sync
-        user.setTokenVersion(user.getTokenVersion() + 1); // invalidate all existing sessions
-        userRepository.save(user);
-
-        entity.setStatus(Status.APPROVED);
-        entity.setDecidedAt(LocalDateTime.now());
-        emailChangeRepo.save(entity);
-
-        mailService.sendEmailChangeApproved(entity.getNewEmail(), entity.getNewEmail());
-        log.info("EmailChangeService.adminApprove() - email changed userId={} from={} to={}",
-                user.getId(), LogMaskUtil.maskEmail(oldEmail), LogMaskUtil.maskEmail(entity.getNewEmail()));
-        return toDto(entity);
-    }
-
-    @Override
-    @Transactional
-    public EmailChangeRequestDto adminReject(Long requestId, EmailChangeRejectRequest request) {
-        log.info("EmailChangeService.adminReject() requestId={}", requestId);
-        EmailChangeRequestEntity entity = emailChangeRepo.findById(requestId)
-                .orElseThrow(() -> new ResourceNotFoundException("EmailChangeRequest", "id", requestId));
-
-        if (entity.getStatus() != Status.PENDING) {
-            throw new BadRequestException("Only PENDING requests can be rejected.");
-        }
-
-        entity.setStatus(Status.REJECTED);
-        entity.setDecidedAt(LocalDateTime.now());
-        entity.setReason(request.getReason());
-        emailChangeRepo.save(entity);
-
-        UserEntity user = userRepository.findById(entity.getUserId()).orElse(null);
-        if (user != null) {
-            mailService.sendEmailChangeRejected(user.getEmail(), entity.getNewEmail(), request.getReason());
-        }
-        return toDto(entity);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 package com.turfbook.backend.service.impl;
 
 import com.turfbook.backend.service.MailService;
+import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,24 @@ public class MailServiceImpl implements MailService {
 
     @Value("${spring.mail.username}")
     private String fromAddress;
+
+    @Value("${spring.mail.host:?}")
+    private String mailHost;
+
+    @Value("${spring.mail.port:?}")
+    private String mailPort;
+
+    /** Injected only to report presence at startup — the value itself is never logged. */
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
+
+    /** One-line startup summary so you can confirm the env vars actually loaded (password never logged). */
+    @PostConstruct
+    void logMailConfig() {
+        log.info("Mail configured - host={}, port={}, from={}, passwordSet={}",
+                mailHost, mailPort, maskEmail(fromAddress),
+                mailPassword != null && !mailPassword.isBlank());
+    }
 
     @Override
     @Async("mailExecutor")
@@ -85,6 +104,9 @@ public class MailServiceImpl implements MailService {
 
     /** Sends a text (+ optional HTML) message. Failures are swallowed after logging. */
     private void send(String to, String subject, String text, String html) {
+        long startedAt = System.currentTimeMillis();
+        log.info("Sending mail - to={}, subject='{}', html={}, host={}, port={}",
+                maskEmail(to), subject, html != null, mailHost, mailPort);
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, html != null, "UTF-8");
@@ -97,9 +119,12 @@ public class MailServiceImpl implements MailService {
                 helper.setText(text);
             }
             mailSender.send(message);
-            log.info("Mail sent to={}", maskEmail(to));
+            log.info("Mail sent - to={}, took={}ms", maskEmail(to), System.currentTimeMillis() - startedAt);
         } catch (Exception ex) {
-            log.error("Failed to send mail to={}: {}", maskEmail(to), ex.getMessage());
+            // Full stack at error so SMTP/auth failures (e.g. 535 bad credentials, connection
+            // timeouts, STARTTLS issues) are diagnosable. Subject/recipient only — never the body/code.
+            log.error("Failed to send mail - to={}, subject='{}', error={}: {}",
+                    maskEmail(to), subject, ex.getClass().getSimpleName(), ex.getMessage(), ex);
         }
     }
 

@@ -6,7 +6,6 @@ import com.turfbook.backend.service.EmailChangeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -49,31 +48,6 @@ public class EmailChangeController {
         return ResponseEntity.ok(status);
     }
 
-    // ── Admin endpoints ───────────────────────────────────────────────────────
-
-    @GetMapping("/api/v1/admin/email-change-requests")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Page<EmailChangeRequestDto>> adminList(
-            @RequestParam(defaultValue = "PENDING") String status,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(emailChangeService.adminList(status, page, size));
-    }
-
-    @PostMapping("/api/v1/admin/email-change-requests/{id}/approve")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<EmailChangeRequestDto> adminApprove(@PathVariable Long id) {
-        log.info("EmailChangeController.adminApprove() id={}", id);
-        return ResponseEntity.ok(emailChangeService.adminApprove(id));
-    }
-
-    @PostMapping("/api/v1/admin/email-change-requests/{id}/reject")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<EmailChangeRequestDto> adminReject(
-            @PathVariable Long id,
-            @RequestBody(required = false) EmailChangeRejectRequest request) {
-        log.info("EmailChangeController.adminReject() id={}", id);
-        if (request == null) request = new EmailChangeRejectRequest();
-        return ResponseEntity.ok(emailChangeService.adminReject(id, request));
-    }
+    // Email change is fully self-service: a verified OTP applies the change immediately
+    // (see EmailChangeService.verifyOtp), so there is no admin review/approve/reject path.
 }

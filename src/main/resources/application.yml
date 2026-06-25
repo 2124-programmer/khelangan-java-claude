@@ -44,7 +44,12 @@ spring:
           starttls:
             enable: true
             required: true
-        debug: false
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+        # Flip MAIL_DEBUG=true to dump the full SMTP conversation to the console (verbose;
+        # includes base64 AUTH lines — use locally only, never in shared/prod logs).
+        debug: ${MAIL_DEBUG:false}
 
   jackson:
     serialization:
@@ -65,6 +70,10 @@ app:
   upload:
     dir: ${UPLOAD_DIR:uploads}
   base-url: ${BASE_URL:http://localhost:8080}
+  otp:
+    # DEV ONLY: when true, generated OTP codes are written to the log so you can test the
+    # reset flow without opening the inbox. Keep false in any shared/prod environment.
+    debug-log-codes: ${OTP_DEBUG_LOG:false}
 
 server:
   port: 8080
@@ -85,6 +94,9 @@ springdoc:
 
 logging:
   level:
-    com.turfbook.backend: INFO
+    # Set APP_LOG_LEVEL=DEBUG to see the fine-grained reset/mail debug logs.
+    com.turfbook.backend: ${APP_LOG_LEVEL:INFO}
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
+    # Spring's mail plumbing; pairs with MAIL_DEBUG for SMTP-level tracing.
+    org.springframework.mail: ${MAIL_LOG_LEVEL:INFO}
