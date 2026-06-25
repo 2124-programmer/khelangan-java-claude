@@ -5,7 +5,8 @@ import com.turfbook.backend.dto.*;
 public interface VenueService {
 
     VenueSummaryPage listVenues(String city, String sport, String search, String sort,
-                                Integer minPrice, Integer maxPrice, Double minRating, int page, int size);
+                                Double lat, Double lng, Integer minPrice, Integer maxPrice,
+                                Double minRating, int page, int size);
 
     VenueDetailDto getVenue(Long id);
 

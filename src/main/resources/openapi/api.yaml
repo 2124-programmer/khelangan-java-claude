@@ -3416,11 +3416,23 @@ paths:
             type: string
         - name: sort
           in: query
-          description: Result ordering. DEFAULT applies plan placement + rating.
+          description: Result ordering. DEFAULT applies plan placement + rating. DISTANCE needs lat/lng.
           schema:
             type: string
-            enum: [DEFAULT, PRICE_LOW, PRICE_HIGH, RATING, NEWEST]
+            enum: [DEFAULT, PRICE_LOW, PRICE_HIGH, RATING, NEWEST, DISTANCE]
             default: DEFAULT
+        - name: lat
+          in: query
+          description: Player latitude — enables DISTANCE sort (nearest first).
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          description: Player longitude — paired with lat for DISTANCE sort.
+          schema:
+            type: number
+            format: double
         - name: minPrice
           in: query
           schema:

@@ -19,6 +19,7 @@ import com.turfbook.backend.service.subscription.SubscriptionGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -34,6 +35,7 @@ import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -75,9 +77,9 @@ public class VenueServiceImpl implements VenueService {
     @Override
     @Transactional(readOnly = true)
     public VenueSummaryPage listVenues(String city, String sport, String search, String sort,
-                                       Integer minPrice, Integer maxPrice, Double minRating, int page, int size) {
+                                       Double lat, Double lng, Integer minPrice, Integer maxPrice,
+                                       Double minRating, int page, int size) {
         log.info("VenueService.listVenues() called - city={}, sport={}, search={}, sort={}", city, sport, search, sort);
-        Pageable pageable = PageRequest.of(page, size, resolveVenueSort(sort));
         String cityParam = StringUtils.hasText(city) ? city : null;
         Long sportId = null;
         if (StringUtils.hasText(sport)) {
@@ -85,10 +87,39 @@ public class VenueServiceImpl implements VenueService {
         }
         String searchParam = StringUtils.hasText(search) ? search : null;
 
+        // DISTANCE sort needs the player's coords. Haversine can't be expressed as a JPA Sort, so
+        // for this one mode we fetch the filtered set, sort by distance in memory, and paginate it.
+        // A city's venue count is small, so the unpaged read is fine.
+        if ("DISTANCE".equals(sort) && lat != null && lng != null) {
+            List<VenueEntity> all = venueRepository.findLiveVenuesFiltered(
+                    VenueEntity.VenueStatus.LIVE, cityParam, sportId, searchParam,
+                    minPrice, maxPrice, minRating, Pageable.unpaged()).getContent();
+            List<VenueEntity> sorted = all.stream()
+                    .sorted(Comparator.comparingDouble(v -> haversineKm(lat, lng, v.getLat(), v.getLng())))
+                    .toList();
+            int from = Math.min(page * size, sorted.size());
+            int to = Math.min(from + size, sorted.size());
+            Page<VenueEntity> entityPage = new PageImpl<>(
+                    new ArrayList<>(sorted.subList(from, to)), PageRequest.of(page, size), sorted.size());
+            return toVenueSummaryPage(entityPage);
+        }
+
+        Pageable pageable = PageRequest.of(page, size, resolveVenueSort(sort));
         Page<VenueEntity> entityPage = venueRepository.findLiveVenuesFiltered(
                 VenueEntity.VenueStatus.LIVE, cityParam, sportId, searchParam,
                 minPrice, maxPrice, minRating, pageable);
         return toVenueSummaryPage(entityPage);
+    }
+
+    /** Great-circle distance in km between two lat/lng points. */
+    private static double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     /** Maps the discovery sort option to a JPA Sort. DEFAULT replicates plan placement + rating. */

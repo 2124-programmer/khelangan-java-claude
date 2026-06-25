@@ -21,11 +21,12 @@ public class VenueController implements VenuesApi {
 
     @Override
     public ResponseEntity<VenueSummaryPage> listVenues(String city, String sport, String search,
-                                                        String sort, Integer minPrice, Integer maxPrice,
+                                                        String sort, Double lat, Double lng,
+                                                        Integer minPrice, Integer maxPrice,
                                                         Double minRating, Integer page, Integer size) {
         log.info("VenueController.listVenues() called - city={}, sport={}, search={}, sort={}", city, sport, search, sort);
-        return ResponseEntity.ok(venueService.listVenues(city, sport, search, sort, minPrice, maxPrice, minRating,
-                page != null ? page : 0, size != null ? size : 20));
+        return ResponseEntity.ok(venueService.listVenues(city, sport, search, sort, lat, lng,
+                minPrice, maxPrice, minRating, page != null ? page : 0, size != null ? size : 20));
     }
 
     @Override
