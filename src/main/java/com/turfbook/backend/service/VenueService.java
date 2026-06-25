@@ -14,6 +14,8 @@ public interface VenueService {
 
     void unfavoriteVenue(Long playerId, Long venueId);
 
+    ContactVenueResponse contactVenue(Long playerId, Long venueId, ContactVenueRequest request);
+
     VenueDetailDto createVenue(Long ownerId, CreateVenueRequest request);
 
     VenueDetailDto updateVenue(Long id, Long ownerId, UpdateVenueRequest request);

@@ -54,6 +54,15 @@ public class VenueController implements VenuesApi {
     }
 
     @Override
+    @PreAuthorize("hasRole('PLAYER')")
+    public ResponseEntity<ContactVenueResponse> contactVenue(Long venueId, ContactVenueRequest contactVenueRequest) {
+        UserPrincipal principal = getPrincipal();
+        log.info("VenueController.contactVenue() called - venueId={}, playerId={}", venueId, principal.getId());
+        ContactVenueResponse body = venueService.contactVenue(principal.getId(), venueId, contactVenueRequest);
+        return ResponseEntity.accepted().body(body);
+    }
+
+    @Override
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<VenueDetailDto> createVenue(CreateVenueRequest request) {
         UserPrincipal principal = getPrincipal();

@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 public class NotificationEntity {
 
     public enum NotificationType {
-        BOOKING, PAYMENT, OFFER, SYSTEM, REVIEW
+        BOOKING, PAYMENT, OFFER, SYSTEM, REVIEW, CONTACT_REQUEST
     }
 
     @Id

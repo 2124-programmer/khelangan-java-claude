@@ -347,6 +347,25 @@ components:
           type: boolean
           description: True when remainingDays is at/below the soon threshold (7).
 
+    ContactVenueRequest:
+      type: object
+      required: [channel]
+      properties:
+        channel:
+          type: string
+          enum: [CALL, WHATSAPP]
+          description: How the player chose to reach the venue.
+
+    ContactVenueResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: True when the intent was recorded.
+        notified:
+          type: boolean
+          description: True if the owner was notified; false when deduped within the cooldown window.
+
     VenueDetailDto:
       type: object
       properties:
@@ -367,7 +386,15 @@ components:
           type: string
         contactPhone:
           type: string
-          description: Venue business phone — safe to show to players
+          nullable: true
+          description: >-
+            Venue business phone. Returned ONLY to authenticated callers; null/omitted
+            for anonymous (guest) requests so the number cannot be harvested without login.
+        contactAvailable:
+          type: boolean
+          description: >-
+            True when the venue has a contact number on file. Safe to expose to everyone
+            (it carries no number) — drives whether the "Contact venue" entry point is shown.
         status:
           type: string
         ratingAverage:
@@ -3394,6 +3421,39 @@ paths:
       responses:
         '204':
           description: Venue unfavorited (idempotent)
+
+  /api/v1/venues/{venueId}/contact:
+    post:
+      tags: [Venues]
+      summary: Record a contact intent and notify the venue owner (Player)
+      description: >-
+        Logged-in player taps Call or WhatsApp on a venue. Records the intent and notifies
+        the owner ("someone wants to contact you"), deduped per player+venue within a cooldown
+        window. Best-effort from the client's perspective — the dialer/WhatsApp launches
+        regardless of this call's result.
+      operationId: contactVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactVenueRequest'
+      responses:
+        '202':
+          description: Intent recorded; owner notified (or notification deduped within the cooldown)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactVenueResponse'
+        '404':
+          description: Venue not found
 
   /api/v1/venues:
     get:

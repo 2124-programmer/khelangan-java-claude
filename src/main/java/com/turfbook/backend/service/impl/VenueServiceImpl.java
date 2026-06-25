@@ -65,9 +65,13 @@ public class VenueServiceImpl implements VenueService {
     private final VenueLifecycleEventRepository lifecycleEventRepository;
     private final FavoriteRepository favoriteRepository;
     private final CouponRepository couponRepository;
+    private final ContactIntentRepository contactIntentRepository;
 
     /** Venues at/below this court count submit for approval free (Starter tier defaulted). */
     private static final int FREE_COURT_THRESHOLD = 2;
+
+    /** Notify a venue's owner at most once per player within this window (anti-spam). */
+    private static final int CONTACT_NOTIFY_COOLDOWN_MINUTES = 30;
 
     /** remainingDays at/below this surfaces the "expiring soon" badge state. */
     private static final int EXPIRING_SOON_DAYS = 7;
@@ -158,6 +162,58 @@ public class VenueServiceImpl implements VenueService {
     }
 
     @Override
+    @Transactional
+    public ContactVenueResponse contactVenue(Long playerId, Long venueId, ContactVenueRequest request) {
+        log.info("VenueService.contactVenue() called - venueId={}, playerId={}, channel={}",
+                venueId, playerId, request.getChannel());
+        VenueEntity venue = venueRepository.findById(venueId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
+        UserEntity player = userRepository.findById(playerId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", playerId));
+
+        ContactIntentEntity.Channel channel = parseChannel(request.getChannel());
+
+        // Anti-spam dedup: notify the owner at most once per (player, venue) within the cooldown
+        // window, regardless of channel or repeated taps. Every intent is still recorded below.
+        LocalDateTime since = LocalDateTime.now().minusMinutes(CONTACT_NOTIFY_COOLDOWN_MINUTES);
+        boolean recentlyNotified = contactIntentRepository
+                .existsByPlayer_IdAndVenue_IdAndNotifiedTrueAndCreatedAtAfter(playerId, venueId, since);
+        boolean notify = !recentlyNotified;
+
+        contactIntentRepository.save(ContactIntentEntity.builder()
+                .player(player).venue(venue).channel(channel).notified(notify).build());
+
+        if (notify) {
+            String channelLabel = channel == ContactIntentEntity.Channel.WHATSAPP ? "WhatsApp" : "Call";
+            // Privacy: player name only (no player phone) — the owner sees the number on the
+            // incoming call/chat anyway. Deep-links to the venue via reference id/type.
+            notificationService.createNotification(
+                    venue.getOwner(),
+                    "Someone wants to contact you",
+                    String.format("%s is trying to reach you about %s via %s.",
+                            player.getName(), venue.getName(), channelLabel),
+                    NotificationEntity.NotificationType.CONTACT_REQUEST,
+                    String.valueOf(venue.getId()),
+                    "VENUE"
+            );
+        }
+
+        return new ContactVenueResponse().ok(true).notified(notify);
+    }
+
+    private ContactIntentEntity.Channel parseChannel(ContactVenueRequest.ChannelEnum channel) {
+        if (channel == ContactVenueRequest.ChannelEnum.WHATSAPP) return ContactIntentEntity.Channel.WHATSAPP;
+        if (channel == ContactVenueRequest.ChannelEnum.CALL) return ContactIntentEntity.Channel.CALL;
+        throw new BadRequestException("Invalid contact channel");
+    }
+
+    /** True when the request carries any authenticated principal (player/owner/admin), not a guest. */
+    private boolean isAuthenticated() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof UserPrincipal;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public VenueDetailDto getVenue(Long id) {
         log.info("VenueService.getVenue() called - id={}", id);
@@ -173,6 +229,13 @@ public class VenueServiceImpl implements VenueService {
             throw new ResourceNotFoundException("Venue", "id", id);
         }
         VenueDetailDto dto = venueMapper.toDetailDto(venue);
+        // Contact-number privacy: the boolean (no number) tells the client to show the "Contact
+        // venue" entry point, but the actual phone is returned ONLY to authenticated callers so a
+        // guest can't harvest it by reading the payload — the contact sheet is login-gated.
+        dto.setContactAvailable(StringUtils.hasText(venue.getContactPhone()));
+        if (!isAuthenticated()) {
+            dto.setContactPhone(null);
+        }
         // The approval thread is owner/admin-only context — never exposed to public/player calls.
         if (privileged) {
             dto.setApprovalComments(buildCommentDtos(venue));
