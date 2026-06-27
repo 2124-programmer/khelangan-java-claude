@@ -4,6 +4,7 @@ import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.AdminAuditEntity;
 import com.turfbook.backend.entity.BookingEntity;
 import com.turfbook.backend.entity.NotificationEntity;
+import com.turfbook.backend.entity.SlotEntity;
 import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.exception.BadRequestException;
 import com.turfbook.backend.exception.ConflictException;
@@ -12,7 +13,9 @@ import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.repository.AdminAuditRepository;
 import com.turfbook.backend.repository.BookingRepository;
 import com.turfbook.backend.repository.ReviewRepository;
+import com.turfbook.backend.repository.SlotRepository;
 import com.turfbook.backend.repository.UserRepository;
+import com.turfbook.backend.service.AdminPermissionService;
 import com.turfbook.backend.service.AdminPlayerService;
 import com.turfbook.backend.service.AuthService;
 import com.turfbook.backend.service.NotificationService;
@@ -50,6 +53,12 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     private final AdminAuditRepository auditRepository;
     private final NotificationService notificationService;
     private final AuthService authService;
+    private final AdminPermissionService adminPermissionService;
+    private final SlotRepository slotRepository;
+
+    /** Statuses considered "upcoming" when cancelling a deleted player's bookings. */
+    private static final List<BookingEntity.BookingStatus> UPCOMING_STATUSES =
+            List.of(BookingEntity.BookingStatus.PENDING, BookingEntity.BookingStatus.CONFIRMED);
 
     @PersistenceContext
     private EntityManager em;
@@ -214,6 +223,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     @Override
     @Transactional
     public PlayerAdminDetail suspend(Long playerId, PlayerSuspendBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (!StringUtils.hasText(body.getReason())) throw new BadRequestException("A reason is required to suspend.");
         UserEntity u = requireUser(playerId);
         if (u.getStatus() != UserEntity.AccountStatus.ACTIVE) {
@@ -232,6 +242,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     @Override
     @Transactional
     public PlayerAdminDetail reactivate(Long playerId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireUser(playerId);
         if (u.getStatus() != UserEntity.AccountStatus.SUSPENDED && u.getStatus() != UserEntity.AccountStatus.BANNED) {
             throw new ConflictException("Only a suspended or banned player can be reactivated.");
@@ -284,7 +295,66 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
 
     @Override
     @Transactional
+    public PlayerAdminDetail delete(Long playerId, PlayerReasonBody body, Long actorId) {
+        requireModerateHard(actorId); // SUPER_ADMIN only
+        if (body == null || !StringUtils.hasText(body.getReason())) {
+            throw new BadRequestException("A reason is required to delete a player.");
+        }
+        UserEntity u = requireUser(playerId);
+        if (u.getRole() != UserEntity.Role.PLAYER) {
+            throw new ConflictException("This account is not a player.");
+        }
+        if (u.getStatus() == UserEntity.AccountStatus.DELETED) {
+            throw new ConflictException("This player is already deleted.");
+        }
+        String from = u.getStatus().name();
+
+        // Cancel the player's upcoming bookings (free the slot, notify the venue owner).
+        int bookingsCancelled = 0;
+        for (BookingEntity b : bookingRepository.findUpcomingForPlayer(u, UPCOMING_STATUSES, java.time.LocalDate.now())) {
+            b.setStatus(BookingEntity.BookingStatus.CANCELLED);
+            b.setCancellationReason(BookingEntity.CancellationReason.PLAYER);
+            SlotEntity slot = b.getSlot();
+            if (slot != null) {
+                slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+                slotRepository.save(slot);
+            }
+            bookingRepository.save(b);
+            if (b.getVenue() != null && b.getVenue().getOwner() != null) {
+                notificationService.createNotification(
+                        b.getVenue().getOwner(),
+                        "Booking Cancelled",
+                        String.format("A booking at %s on %s was cancelled because the player's account was closed.",
+                                b.getVenue().getName(), b.getDate()),
+                        NotificationEntity.NotificationType.BOOKING,
+                        String.valueOf(b.getId()), "BOOKING");
+            }
+            bookingsCancelled++;
+        }
+
+        // Soft-delete: retain the row for history, free active_* for reuse, force-logout all sessions.
+        u.setStatus(UserEntity.AccountStatus.DELETED);
+        u.setBlocked(true);
+        u.setTokenVersion(u.getTokenVersion() + 1);
+        u.setActiveEmail(null);
+        u.setActivePhone(null);
+        u.setSuspendedReason(null);
+        u.setSuspendedUntil(null);
+        u.setDeletedAt(LocalDateTime.now());
+        u.setDeletedBy(actorId);
+        u.setDeletedReason(body.getReason());
+        u.setDeletedBookingsCancelled(bookingsCancelled);
+        userRepository.save(u);
+
+        audit(actorId, u, "DELETE", body.getReason(), from, u.getStatus().name());
+        log.info("Player {} soft-deleted by admin {} — {} booking(s) cancelled.", playerId, actorId, bookingsCancelled);
+        return getDetail(playerId);
+    }
+
+    @Override
+    @Transactional
     public PlayerAdminDetail setVerification(Long playerId, PlayerVerificationBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireUser(playerId);
         String channel = body.getChannel() == null ? "" : body.getChannel().toUpperCase();
         boolean verified = Boolean.TRUE.equals(body.getVerified());
@@ -301,6 +371,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     @Override
     @Transactional
     public void forceLogout(Long playerId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireUser(playerId);
         u.setTokenVersion(u.getTokenVersion() + 1);
         userRepository.save(u);
@@ -310,6 +381,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     @Override
     @Transactional
     public void triggerPasswordReset(Long playerId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireUser(playerId);
         try {
             PasswordResetRequest req = new PasswordResetRequest();
@@ -324,6 +396,7 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     @Override
     @Transactional
     public void message(Long playerId, PlayerMessageBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (body.getChannels() == null || body.getChannels().isEmpty()) {
             throw new BadRequestException("At least one channel is required.");
         }
@@ -461,13 +534,15 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
     }
 
     private List<String> availableActions(UserEntity.AccountStatus status) {
-        // DELETE is intentionally omitted in Phase 1 (identifier-release lands in Phase 2).
-        return switch (status) {
-            case ACTIVE -> List.of("SUSPEND", "BAN", "VERIFY", "UNVERIFY", "FORCE_LOGOUT", "RESET_PASSWORD", "MESSAGE");
-            case SUSPENDED -> List.of("REACTIVATE", "BAN", "MESSAGE");
-            case BANNED -> List.of("UNBAN", "MESSAGE");
+        // Status-based action set, then role-filtered for the caller (READ_ONLY → none;
+        // SUPPORT → no BAN/UNBAN/DELETE; SUPER_ADMIN → all).
+        List<String> base = switch (status) {
+            case ACTIVE -> List.of("SUSPEND", "BAN", "VERIFY", "UNVERIFY", "FORCE_LOGOUT", "RESET_PASSWORD", "MESSAGE", "DELETE");
+            case SUSPENDED -> List.of("REACTIVATE", "BAN", "MESSAGE", "DELETE");
+            case BANNED -> List.of("UNBAN", "MESSAGE", "DELETE");
             case DELETED -> List.of();
         };
+        return adminPermissionService.filterActions(base);
     }
 
     private void audit(Long actorId, UserEntity target, String action, String reason, String from, String to) {
@@ -477,10 +552,9 @@ public class AdminPlayerServiceImpl implements AdminPlayerService {
                 .fromStatus(from).toStatus(to).build());
     }
 
-    /** Phase 1: every ADMIN may moderate hard (ban). Real SUPER_ADMIN/SUPPORT roles slot in here later. */
+    /** Ban/unban/delete are SUPER_ADMIN-only (delegates to the central RBAC service). */
     private void requireModerateHard(Long actorId) {
-        boolean canModerateHard = true; // default per spec until RBAC sub-roles exist
-        if (!canModerateHard) throw new ForbiddenException("You do not have permission for this action.");
+        adminPermissionService.requireModerateHard(actorId);
     }
 
     private UserEntity requireUser(Long id) {

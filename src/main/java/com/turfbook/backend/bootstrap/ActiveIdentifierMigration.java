@@ -62,10 +62,21 @@ public class ActiveIdentifierMigration implements ApplicationRunner {
         try {
             // Only the lowest-id account for each phone number claims active_phone; later
             // duplicates stay NULL (logged below) since phone was not unique historically.
+            //
+            // Crucially we must SKIP any phone that is ALREADY reserved by some account
+            // (via normal registration / phone-change at runtime, or a prior run). Otherwise
+            // the MIN(id) candidate collides with that existing active_phone and — since this
+            // is a single statement — the whole batch rolls back, leaving every user un-backfilled.
+            // The derived table is materialized before the outer UPDATE, so reading `users`
+            // inside it (alongside updating `users u`) is permitted by MySQL.
             int n = jdbc.update(
                     "UPDATE users u " +
                     "JOIN (SELECT MIN(id) AS id FROM users " +
                     "      WHERE status <> 'DELETED' AND phone IS NOT NULL AND phone <> '' " +
+                    "        AND active_phone IS NULL " +
+                    "        AND phone NOT IN (SELECT active_phone FROM (" +
+                    "              SELECT active_phone FROM users WHERE active_phone IS NOT NULL" +
+                    "          ) reserved) " +
                     "      GROUP BY phone) first ON u.id = first.id " +
                     "SET u.active_phone = u.phone " +
                     "WHERE u.active_phone IS NULL AND u.status <> 'DELETED'");

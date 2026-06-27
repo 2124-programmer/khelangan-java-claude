@@ -21,6 +21,7 @@ import com.turfbook.backend.repository.DisputeRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.service.AdminDisputeService;
 import com.turfbook.backend.service.AdminOwnerService;
+import com.turfbook.backend.service.AdminPermissionService;
 import com.turfbook.backend.service.AdminPlayerService;
 import com.turfbook.backend.service.NotificationService;
 import jakarta.persistence.EntityManager;
@@ -61,6 +62,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     private final NotificationService notificationService;
     private final AdminPlayerService adminPlayerService;
     private final AdminOwnerService adminOwnerService;
+    private final AdminPermissionService adminPermissionService;
 
     @PersistenceContext
     private EntityManager em;
@@ -171,6 +173,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail assign(Long disputeId, Long adminId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         DisputeEntity d = require(disputeId);
         requireOpen(d);
         Long targetAdmin = adminId != null ? adminId : actorId;
@@ -187,6 +190,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail message(Long disputeId, String audience, List<String> channels, String body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (!StringUtils.hasText(body)) throw new BadRequestException("Message body is required.");
         if (channels == null || channels.isEmpty()) throw new BadRequestException("At least one channel is required.");
         DisputeEntity d = require(disputeId);
@@ -212,6 +216,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail requestInfo(Long disputeId, PartyRole party, String message, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (party == null) throw new BadRequestException("party is required.");
         if (!StringUtils.hasText(message)) throw new BadRequestException("A message is required.");
         DisputeEntity d = require(disputeId);
@@ -235,6 +240,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail addNote(Long disputeId, String body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (!StringUtils.hasText(body)) throw new BadRequestException("Note body is required.");
         DisputeEntity d = require(disputeId);
         UserEntity actor = actor(actorId);
@@ -247,6 +253,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail resolve(Long disputeId, DisputeResolveBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (body == null || body.getOutcome() == null || body.getAtFault() == null
                 || !StringUtils.hasText(body.getRulingNote())) {
             throw new BadRequestException("outcome, atFault and a ruling note are required.");
@@ -319,6 +326,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail dismiss(Long disputeId, String reason, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (!StringUtils.hasText(reason)) throw new BadRequestException("A reason is required to dismiss.");
         DisputeEntity d = require(disputeId);
         if (d.getStatus() == DisputeEntity.DisputeStatus.RESOLVED
@@ -339,6 +347,7 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     @Override
     @Transactional
     public DisputeDetail reopen(Long disputeId, String reason, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (!StringUtils.hasText(reason)) throw new BadRequestException("A reason is required to reopen.");
         DisputeEntity d = require(disputeId);
         if (d.getStatus() != DisputeEntity.DisputeStatus.RESOLVED
@@ -402,9 +411,9 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     }
 
     /** Phase 1 RBAC: BAN consequence is super-admin only; defaults to allowed until sub-roles exist. */
+    /** Applying a BAN consequence from a dispute is SUPER_ADMIN-only (central RBAC). */
     private void requireCanBan(Long actorId) {
-        boolean canModerateHard = true;
-        if (!canModerateHard) throw new ForbiddenException("You do not have permission to ban.");
+        adminPermissionService.requireModerateHard(actorId);
     }
 
     // ─── Mapping ─────────────────────────────────────────────────────────────
@@ -524,12 +533,14 @@ public class AdminDisputeServiceImpl implements AdminDisputeService {
     }
 
     private List<String> availableActions(DisputeEntity.DisputeStatus status) {
-        return switch (status) {
+        List<String> base = switch (status) {
             case OPEN -> List.of("ASSIGN", "MESSAGE", "REQUEST_INFO", "ADD_NOTE", "RESOLVE", "DISMISS");
             case UNDER_REVIEW -> List.of("MESSAGE", "REQUEST_INFO", "ADD_NOTE", "APPLY_CONSEQUENCE", "RESOLVE", "DISMISS");
             case NEEDS_INFO -> List.of("MESSAGE", "ADD_NOTE", "APPLY_CONSEQUENCE", "RESOLVE", "DISMISS");
             case RESOLVED, DISMISSED -> List.of("ADD_NOTE", "REOPEN");
         };
+        // READ_ONLY admins get no actions; SUPPORT/SUPER keep all (BAN consequence is gated at resolve time).
+        return adminPermissionService.filterActions(base);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

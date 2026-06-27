@@ -24,6 +24,16 @@ public class UserEntity {
     }
 
     /**
+     * Admin sub-role (only meaningful when {@link #role} == ADMIN). Governs what an admin may do:
+     * SUPER_ADMIN → everything (incl. ban/delete); SUPPORT → soft moderation, no ban/delete;
+     * READ_ONLY → view only, no mutations. NULL on a legacy admin is treated as SUPER_ADMIN so
+     * existing admins keep full access without a migration.
+     */
+    public enum AdminRole {
+        SUPER_ADMIN, SUPPORT, READ_ONLY
+    }
+
+    /**
      * Account standing for admin moderation.
      * ACTIVE → normal; SUSPENDED → temporary cool-down; BANNED → identifiers retained + locked;
      * DELETED → closed (identifier release lands in Phase 2). {@link #isBlocked} stays in sync so
@@ -70,6 +80,11 @@ public class UserEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;
+
+    /** Admin sub-role; NULL for non-admins and legacy admins (legacy NULL ⇒ treated as SUPER_ADMIN). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "admin_role", length = 20)
+    private AdminRole adminRole;
 
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;

@@ -22,6 +22,7 @@ import com.turfbook.backend.repository.SubscriptionRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.repository.VenueRepository;
 import com.turfbook.backend.service.AdminOwnerService;
+import com.turfbook.backend.service.AdminPermissionService;
 import com.turfbook.backend.service.AuthService;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.subscription.SubscriptionGate;
@@ -70,6 +71,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     private final AuthService authService;
     private final SubscriptionGate subscriptionGate;
     private final VenueMapper venueMapper;
+    private final AdminPermissionService adminPermissionService;
 
     @PersistenceContext
     private EntityManager em;
@@ -321,6 +323,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     @Override
     @Transactional
     public OwnerAdminDetail suspend(Long ownerId, OwnerSuspendBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (body == null || !StringUtils.hasText(body.getReason())) {
             throw new BadRequestException("A reason is required to suspend.");
         }
@@ -344,6 +347,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     @Override
     @Transactional
     public OwnerAdminDetail reactivate(Long ownerId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireOwner(ownerId);
         requireNotDeleted(u);
         if (u.getStatus() != UserEntity.AccountStatus.SUSPENDED && u.getStatus() != UserEntity.AccountStatus.BANNED) {
@@ -410,6 +414,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     @Override
     @Transactional
     public OwnerAdminDetail setVerification(Long ownerId, OwnerVerificationBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireOwner(ownerId);
         requireNotDeleted(u);
         String channel = body != null && body.getChannel() != null ? body.getChannel().toUpperCase() : "";
@@ -427,6 +432,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     @Override
     @Transactional
     public void forceLogout(Long ownerId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireOwner(ownerId);
         requireNotDeleted(u);
         u.setTokenVersion(u.getTokenVersion() + 1);
@@ -437,6 +443,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     @Override
     @Transactional
     public void triggerPasswordReset(Long ownerId, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         UserEntity u = requireOwner(ownerId);
         requireNotDeleted(u);
         try {
@@ -452,6 +459,7 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     @Override
     @Transactional
     public void message(Long ownerId, OwnerMessageBody body, Long actorId) {
+        adminPermissionService.requireWrite(actorId);
         if (body == null || body.getChannels() == null || body.getChannels().isEmpty()) {
             throw new BadRequestException("At least one channel is required.");
         }
@@ -716,13 +724,15 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     }
 
     private List<String> availableActions(UserEntity.AccountStatus status) {
-        return switch (status) {
+        List<String> base = switch (status) {
             case ACTIVE -> List.of("SUSPEND", "BAN", "VERIFY", "UNVERIFY",
                     "FORCE_LOGOUT", "RESET_PASSWORD", "MESSAGE", "DELETE");
             case SUSPENDED -> List.of("REACTIVATE", "BAN", "MESSAGE", "DELETE");
             case BANNED -> List.of("UNBAN", "MESSAGE", "DELETE");
             case DELETED -> List.of();
         };
+        // Role-filter for the caller (READ_ONLY → none; SUPPORT → no BAN/UNBAN/DELETE).
+        return adminPermissionService.filterActions(base);
     }
 
     // ─── Small utilities ─────────────────────────────────────────────────────
@@ -743,9 +753,9 @@ public class AdminOwnerServiceImpl implements AdminOwnerService {
     }
 
     /** Phase 1 RBAC: every ADMIN may moderate hard (ban/delete). SUPER_ADMIN/SUPPORT sub-roles slot in later. */
+    /** Ban/unban/delete are SUPER_ADMIN-only (delegates to the central RBAC service). */
     private void requireModerateHard(Long actorId) {
-        boolean canModerateHard = true;
-        if (!canModerateHard) throw new ForbiddenException("You do not have permission for this action.");
+        adminPermissionService.requireModerateHard(actorId);
     }
 
     private void audit(Long actorId, UserEntity target, String action, String reason,

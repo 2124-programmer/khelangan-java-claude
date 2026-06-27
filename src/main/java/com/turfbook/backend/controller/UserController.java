@@ -5,6 +5,7 @@ import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
 import com.turfbook.backend.dto.MessageResponse;
+import com.turfbook.backend.dto.SetAdminRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import com.turfbook.backend.security.UserPrincipal;
@@ -17,6 +18,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -57,6 +59,16 @@ public class UserController implements UsersApi {
         UserPrincipal principal = getPrincipal();
         log.info("UserController.deleteMe() called - userId={}", principal.getId());
         return ResponseEntity.ok(userService.deleteMe(principal.getId(), request));
+    }
+
+    /** Assign an admin sub-role (SUPER_ADMIN only — enforced in the service). */
+    @PatchMapping("/api/v1/admin/users/{id}/admin-role")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MessageResponse> setAdminRole(
+            @PathVariable Long id, @Valid @RequestBody SetAdminRoleRequest request) {
+        UserPrincipal principal = getPrincipal();
+        log.info("UserController.setAdminRole() called - actorId={}, targetId={}", principal.getId(), id);
+        return ResponseEntity.ok(userService.setAdminRole(principal.getId(), id, request));
     }
 
     private UserPrincipal getPrincipal() {

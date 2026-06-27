@@ -4,6 +4,7 @@ import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
 import com.turfbook.backend.dto.MessageResponse;
+import com.turfbook.backend.dto.SetAdminRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import com.turfbook.backend.dto.UserPage;
@@ -33,6 +34,9 @@ public interface UserService {
     UserDto blockUser(Long id);
 
     UserDto unblockUser(Long id);
+
+    /** Assign an admin sub-role to an ADMIN user (SUPER_ADMIN only). */
+    MessageResponse setAdminRole(Long actorId, Long targetUserId, SetAdminRoleRequest request);
 
     UserEntity getEntityById(Long id);
 }

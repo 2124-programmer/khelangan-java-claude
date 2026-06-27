@@ -4,12 +4,16 @@ import com.turfbook.backend.api.AdminPlayersApi;
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.security.UserPrincipal;
 import com.turfbook.backend.service.AdminPlayerService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
@@ -54,6 +58,13 @@ public class AdminPlayerController implements AdminPlayersApi {
     @Override
     public ResponseEntity<PlayerAdminDetail> unbanPlayer(Long playerId) {
         return ResponseEntity.ok(service.unban(playerId, currentUserId()));
+    }
+
+    /** Soft-delete a player (SUPER_ADMIN only). Hand-written — not part of the generated contract. */
+    @DeleteMapping("/api/v1/admin/players/{playerId}")
+    public ResponseEntity<PlayerAdminDetail> deletePlayer(
+            @PathVariable Long playerId, @Valid @RequestBody PlayerReasonBody body) {
+        return ResponseEntity.ok(service.delete(playerId, body, currentUserId()));
     }
 
     @Override

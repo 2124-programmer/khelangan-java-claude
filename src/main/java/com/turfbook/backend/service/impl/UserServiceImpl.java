@@ -4,6 +4,7 @@ import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
 import com.turfbook.backend.dto.MessageResponse;
+import com.turfbook.backend.dto.SetAdminRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import com.turfbook.backend.dto.UserPage;
@@ -19,6 +20,7 @@ import com.turfbook.backend.repository.BookingRepository;
 import com.turfbook.backend.repository.SlotRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.security.JwtTokenProvider;
+import com.turfbook.backend.service.AdminPermissionService;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +49,7 @@ public class UserServiceImpl implements UserService {
     private final BookingRepository bookingRepository;
     private final SlotRepository slotRepository;
     private final NotificationService notificationService;
+    private final AdminPermissionService adminPermissionService;
 
     /** Statuses considered "upcoming" when cancelling a closing player's bookings. */
     private static final List<BookingEntity.BookingStatus> UPCOMING_STATUSES =
@@ -223,6 +226,30 @@ public class UserServiceImpl implements UserService {
         UserEntity user = getEntityById(id);
         user.setBlocked(false);
         return userMapper.toDto(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional
+    public MessageResponse setAdminRole(Long actorId, Long targetUserId, SetAdminRoleRequest request) {
+        adminPermissionService.requireModerateHard(actorId); // SUPER_ADMIN only
+        UserEntity.AdminRole role;
+        try {
+            role = UserEntity.AdminRole.valueOf(request.getAdminRole().trim().toUpperCase());
+        } catch (Exception e) {
+            throw new com.turfbook.backend.exception.BadRequestException(
+                    "adminRole must be one of SUPER_ADMIN, SUPPORT, READ_ONLY.");
+        }
+        UserEntity target = getEntityById(targetUserId);
+        if (target.getRole() != UserEntity.Role.ADMIN) {
+            throw new com.turfbook.backend.exception.ConflictException("Admin sub-roles apply only to ADMIN users.");
+        }
+        target.setAdminRole(role);
+        target.setTokenVersion(target.getTokenVersion() + 1); // re-issue so the new role takes effect
+        userRepository.save(target);
+        log.info("UserService.setAdminRole() - actor={} set user={} adminRole={}", actorId, targetUserId, role);
+        MessageResponse response = new MessageResponse();
+        response.setMessage("Admin role updated to " + role.name() + ".");
+        return response;
     }
 
     @Override

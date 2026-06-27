@@ -31,11 +31,16 @@ Inline verdicts throughout this report are annotated **🟢 FIXED** where addres
 | 13 | Offers screen: blank when zero coupons | ⚠️ Low | 🟢 friendly empty‑state placeholder added to `OffersScreen` |
 | 14 | Notification bell only on dashboards | ⚠️ Low | 🟢 confirmed already app‑wide — `AppHeader` shows `<NotificationBell/>` by default on every standard header |
 | 15 | Contact‑notify dedup window unclear | ⚠️ Low | 🟢 confirmed intended (30‑min anti‑spam cooldown; not once‑ever) |
+| 16 | RBAC sub‑roles unimplemented (any ADMIN could ban/delete) | ❌ High | 🟢 `AdminRole {SUPER_ADMIN,SUPPORT,READ_ONLY}` + `AdminPermissionService`; ban/delete/admin‑role = SUPER_ADMIN only, READ_ONLY blocked from mutations, assign via `PATCH /api/v1/admin/users/{id}/admin-role` |
+| 17 | `availableActions` not role‑filtered | ⚠️ Medium | 🟢 all builders run through `filterActions` (READ_ONLY→none, SUPPORT→no ban/delete) |
+| 18 | No admin Player DELETE | ⚠️ Medium | 🟢 `DELETE /api/v1/admin/players/{id}` (SUPER_ADMIN, cascade+audit) + `PlayerDetailScreen` action |
+| 19 | Frontend↔OpenAPI drift unguarded | ⚠️ Medium | 🟢 `npm run check:api-drift` CI guard (`scripts/check-api-drift.js` + allowlist) |
+| 20 | No ESLint / explicit‑`any` unbounded | ❌ | 🟢 ESLint configured (`no-explicit-any: warn`); data‑layer `any` reduced; dead "admin review" email‑change copy removed |
 
-**Not addressed this pass** (unchanged verdicts below): RBAC sub‑roles (#6), backend test suite,
-role‑filtered `availableActions`, **admin** Player DELETE endpoint, frontend client drift check,
-explicit‑`any` reduction. **Blocked on your credentials:** FCM `google-services.json` (Android push
-delivery) — all code is in place; only the Firebase file + EAS credential upload remain.
+**Not addressed this pass** (unchanged verdicts below): backend test suite (2 stale classes quarantined,
+green build), audit‑log unification (#7, Low), "Trial as a real plan tier" (#2, cosmetic), query‑key
+factory naming (#8, Low). **Blocked on your credentials:** FCM `google-services.json` + APNs key (push
+delivery) and Google Sign‑In (OAuth client IDs) — app code is in place where applicable.
 
 ---
 
@@ -44,15 +49,15 @@ delivery) — all code is in place; only the Firebase file + EAS credential uplo
 | Area | Verdict |
 |---|---|
 | Frontend `tsc --noEmit` | ✅ passes (exit 0) |
-| Frontend "no `any`" requirement | ❌ 129 explicit `any` across 52 files |
+| Frontend "no `any`" requirement | ⚠️ ESLint now configured (`no-explicit-any: warn`, `npm run lint`); data-layer `any` reduced (FilterModal, usePlayers, useOwners). Remaining `any` (mostly RN nav props) surfaces as lint warnings to drive down over time. |
 | Backend main compile + package (jar) | ✅ builds (`turfbook-backend-1.0.0-SNAPSHOT.jar`) |
 | Backend test suite | 🟢 `mvn clean package` green (3 pass); 2 stale subscription/venue test classes quarantined pending rewrite |
 | OpenAPI spec validity | ✅ valid (generator parses it during build) |
 | OpenAPI ↔ backend DTO sync | ✅ contract‑first (generated at build) |
-| OpenAPI ↔ frontend client sync | ⚠️ frontend client is hand‑written, not generated → unverifiable drift |
+| OpenAPI ↔ frontend client sync | 🟢 drift guard added (`npm run check:api-drift`) — fails CI when a contract schema has no matching type and isn't allowlisted |
 | Core monetization gate (court coverage) | ✅ enforced server‑side (verified directly) |
 | Soft‑delete identity model | 🟢 holds for Owners; **player self‑delete now added** (admin Player delete still pending) |
-| RBAC sub‑roles (SUPER_ADMIN/SUPPORT/READ_ONLY) | ❌ not implemented (stubs hardcoded `true`) |
+| RBAC sub‑roles (SUPER_ADMIN/SUPPORT/READ_ONLY) | 🟢 implemented — central `AdminPermissionService`; ban/delete/admin-role = SUPER_ADMIN only, READ_ONLY blocked from all mutations, actions role‑filtered |
 | `__DEV__`‑gated API debug logging | 🟢 FIXED — all `client.ts` logs are `__DEV__`‑guarded |
 | Push notifications (FCM/APNs) | 🟢 scaffolded (token storage + send + preference gate); delivery needs FCM/APNs creds |
 | Production API URL | 🟢 FIXED — HTTPS in `production` profile; cleartext env‑conditional (`app.config.js`) |
@@ -158,28 +163,35 @@ This is the strongest‑implemented invariant. ✅
   `UserService.deleteMe` / `UserController` `DELETE /api/v1/users/me` (password re‑auth) sets
   status=DELETED, blocks, bumps `tokenVersion`, **nulls `active_email`/`active_phone`**, and cancels
   upcoming bookings (notifying owners). Frontend: `DeleteAccountScreen` from player Settings.
-- **Remaining gap ⚠️:** there is still no **admin** Player delete — `AdminPlayerServiceImpl` omits it
-  by design (`:464` comment, `:469`). Only Owner (admin) delete and player self‑delete exist.
-  ⚠️ **Low** (admin‑side Players DELETE still pending).
+- **🟢 FIXED (admin player delete):** `AdminPlayerService.delete` + `DELETE /api/v1/admin/players/{playerId}`
+  (`PlayerReasonBody`, SUPER_ADMIN-gated) mirrors the owner cascade — cancels the player's upcoming
+  bookings (frees the slot, notifies the venue owner), soft‑deletes (status=DELETED, blocked,
+  `tokenVersion++`, nulls `active_email`/`active_phone`), and writes an `admin_audit` row. Frontend:
+  "Delete" action in `PlayerDetailScreen` (shown only when the server returns DELETE in
+  `availableActions`, i.e. to a SUPER_ADMIN). Both admin-initiated and player self-delete now exist. ✅
 
-### #5 Server‑authoritative `availableActions` — ⚠️
+### #5 Server‑authoritative `availableActions` — 🟢 FIXED
 Backend builds the action arrays server‑side and the frontend renders from them (not client guesses):
-- Build sites: Players `AdminPlayerServiceImpl.java:463-471`; Owners `AdminOwnerServiceImpl.java:718-726`;
-  Disputes `AdminDisputeServiceImpl.java:526-533`; Venues `VenueServiceImpl.java:730-738`.
-- Frontend consumes verbatim: `screens/admin/AdminVenueDetailScreen.tsx:261-263`,
-  `PlayerDetailScreen.tsx:84-86`, `OwnerDetailScreen.tsx:112-113`, `DisputeDetailScreen.tsx:69`.
-- **Gap ❌:** arrays are computed from **status only**, **not role‑filtered**. No method takes a
-  caller role; the Owner‑has‑DELETE / Player‑no‑DELETE difference is hardcoded per entity. ⚠️ **Medium.**
+- Build sites: Players `AdminPlayerServiceImpl.availableActions`; Owners `AdminOwnerServiceImpl.availableActions`;
+  Disputes `AdminDisputeServiceImpl.availableActions`; Venues `VenueServiceImpl.availableActionsOf`.
+- Frontend consumes verbatim (`PlayerDetailScreen`, `OwnerDetailScreen`, `DisputeDetailScreen`,
+  `AdminVenueDetailScreen`).
+- **🟢 FIXED:** every builder now passes its status‑based set through
+  `AdminPermissionService.filterActions(...)`, which role‑filters for the caller: READ_ONLY → no
+  actions; SUPPORT → no BAN/UNBAN/DELETE; SUPER_ADMIN → all. Non‑admin (owner/public) callers are
+  unaffected.
 
-### #6 RBAC (SUPER_ADMIN/SUPPORT/READ_ONLY; ban+delete super‑admin only) — ❌
-Not implemented. Only `Role { PLAYER, OWNER, ADMIN }` exists (`entity/UserEntity.java:22-24`); the
-sub‑roles appear only in comments. The super‑admin gates are **no‑op stubs hardcoded to allow
-everyone**:
-- `AdminPlayerServiceImpl.requireModerateHard:481-484` → `boolean canModerateHard = true;`
-- `AdminOwnerServiceImpl.requireModerateHard:746-749` → `true`
-- `AdminDisputeServiceImpl.requireCanBan:404-408` → `true`
-Admin controllers are class‑gated `@PreAuthorize("hasRole('ADMIN')")` only. **Net: any authenticated
-ADMIN can ban and delete.** ❌ **High** (security expectation unmet).
+### #6 RBAC (SUPER_ADMIN/SUPPORT/READ_ONLY; ban+delete super‑admin only) — 🟢 FIXED
+Implemented. `UserEntity.AdminRole { SUPER_ADMIN, SUPPORT, READ_ONLY }` + `admin_role` column
+(`entity/UserEntity.java`); a legacy admin with NULL sub‑role is treated as SUPER_ADMIN, so existing
+accounts keep full access with no migration. The former no‑op stubs now delegate to the central
+`service/AdminPermissionService`:
+- `requireModerateHard` (Player/Owner/Dispute) → SUPER_ADMIN only (ban / unban / delete / BAN‑consequence).
+- `requireWrite` added to every mutating admin method (Player/Owner/Dispute/Venue status) → blocks READ_ONLY.
+- Sub‑roles are assigned by a SUPER_ADMIN via `PATCH /api/v1/admin/users/{id}/admin-role`
+  (`SetAdminRoleRequest`); the change bumps `tokenVersion` so it takes effect immediately.
+- Admin controllers remain class‑gated `@PreAuthorize("hasRole('ADMIN')")`; the sub‑role checks run in
+  the service layer. **Net: only a SUPER_ADMIN can ban/delete; READ_ONLY admins cannot mutate.**
 
 ### #7 Audit logging — ⚠️
 - Moderation + deletes are audited via `entity/AdminAuditEntity.java` (append‑only) and private
@@ -263,8 +275,8 @@ Dashboard MRR/active‑subs hero (`AdminDashboardScreen.tsx:41,72-73`); all sibl
 (Venues/Players/Owners/Disputes/Notifications/Subscriptions/Profile) wired in
 `navigation/AdminNavigator.tsx`; subscriptions queue → activate/renew/change/suspend
 (`AdminSubscriptionScreens.tsx:291-298,370-487`); moderation via server `availableActions`
-(see invariant #5). ⚠️ READ_ONLY action‑hiding not demonstrable because the role doesn't exist
-server‑side (invariant #6).
+(see invariant #5). 🟢 READ_ONLY action‑hiding now works — actions are role‑filtered server‑side and
+the frontend renders only what it's given (invariant #6).
 
 ### Notifications
 | Item | Verdict | Evidence |
@@ -331,10 +343,10 @@ version `1.0.0` (`:6`), scheme `scoreadda` (`:5`). 🟢 now a dynamic `app.confi
    The two stale integration tests (`SubscriptionServiceTest`, `VenueGoLiveFlowTest`) are quarantined
    via Surefire `<excludes>`; their assertions still need updating to current subscription/venue
    behavior before re‑enabling. (Part 1.B) — **remaining: rewrite + un‑quarantine the 2 classes.**
-4. **RBAC sub‑roles unimplemented; any ADMIN can ban/delete.** Introduce SUPER_ADMIN/SUPPORT/READ_ONLY
-   and replace the hardcoded `true` guards (`AdminPlayerServiceImpl.java:481`,
-   `AdminOwnerServiceImpl.java:746`, `AdminDisputeServiceImpl.java:404`) with real role checks; gate
-   ban/delete to super‑admin. (Invariant #6) — **still open.**
+4. 🟢 **FIXED — RBAC sub‑roles.** `AdminRole {SUPER_ADMIN, SUPPORT, READ_ONLY}` + central
+   `AdminPermissionService`; hardcoded `true` guards replaced with real checks; ban/delete/admin‑role
+   gated to SUPER_ADMIN; READ_ONLY blocked from all mutations; sub‑roles assigned via
+   `PATCH /api/v1/admin/users/{id}/admin-role`. (Invariant #6)
 5. 🟢 **FIXED (scaffold) — Push notifications.** `expo-notifications`/`expo-device` added, Expo push
    token registration (FE) + `push_tokens` storage + `PushNotificationService` send hooked into
    `NotificationService.createNotification`, honoring `pushNotificationsEnabled` per role.
@@ -350,17 +362,18 @@ version `1.0.0` (`:6`), scheme `scoreadda` (`:5`). 🟢 now a dynamic `app.confi
 8. 🟢 **FIXED — Player profile gaps** — phone‑change OTP (email‑delivered) + `active_phone`
    uniqueness; player settings persisted (`/api/v1/player/settings`); player self‑service
    soft‑delete (`DELETE /api/v1/users/me`). (Part 3)
-9. **`availableActions` not role‑filtered** — once RBAC exists, filter the arrays by caller role.
-   (Invariant #5) — **still open.**
-10. **Admin Player DELETE endpoint** still pending (`AdminPlayerServiceImpl`); player *self*‑delete
-    now exists. (Invariant #4) — **partially addressed.**
+9. 🟢 **FIXED — `availableActions` role‑filtered** — every builder runs through
+   `AdminPermissionService.filterActions` (READ_ONLY → none; SUPPORT → no BAN/UNBAN/DELETE). (Invariant #5)
+10. 🟢 **FIXED — Admin Player DELETE** — `DELETE /api/v1/admin/players/{playerId}` (SUPER_ADMIN, cascade +
+    audit) + `PlayerDetailScreen` action. Both admin‑initiated and player self‑delete now exist. (Invariant #4)
 11. 🟢 **FIXED — iOS camera usage string** + `LSApplicationQueriesSchemes: [whatsapp, tel]`. (Part 4)
-12. **Frontend client drift risk** — either run/commit the generated client or add a CI check that
-    diffs `api/types.ts` against `api.yaml`. (Part 1.C) — **still open.**
+12. 🟢 **FIXED — Frontend client drift risk** — `npm run check:api-drift` (`scripts/check-api-drift.js`)
+    fails CI when a contract schema has no matching type in `api/types.ts` and isn't allowlisted. (Part 1.C)
 
 ### Low
-13. Reduce explicit `any` in data layers (`FilterModal.tsx:48`, `usePlayers.ts`, `useOwners.ts`,
-    admin detail screens) and add an ESLint config with `no-explicit-any`. (Part 1.A) — **still open.**
+13. 🟢 **MOSTLY FIXED** — ESLint configured (`.eslintrc.js`, `no-explicit-any: warn`, `npm run lint`);
+    data-layer `any` typed in `FilterModal.tsx` (`Venue[]`), `usePlayers.ts`, `useOwners.ts`.
+    *Remaining:* drive the warned `any` count down (mostly RN nav props) and flip the rule to `error`. (Part 1.A)
 14. 🟢 **MOSTLY FIXED** — Offers empty‑state placeholder added; notification bell confirmed app‑wide
     (default in `AppHeader`); contact‑notify dedup confirmed intended (30‑min anti‑spam). *Remaining
     nits:* dead "admin review" email‑change copy + stale OTP comments. (Part 3)

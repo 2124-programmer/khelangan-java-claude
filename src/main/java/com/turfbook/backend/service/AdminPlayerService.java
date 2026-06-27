@@ -28,6 +28,9 @@ public interface AdminPlayerService {
 
     PlayerAdminDetail unban(Long playerId, Long actorId);
 
+    /** Soft-delete a player (SUPER_ADMIN only): cancels upcoming bookings, frees active_email/phone. */
+    PlayerAdminDetail delete(Long playerId, PlayerReasonBody body, Long actorId);
+
     PlayerAdminDetail setVerification(Long playerId, PlayerVerificationBody body, Long actorId);
 
     void forceLogout(Long playerId, Long actorId);

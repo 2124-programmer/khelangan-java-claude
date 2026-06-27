@@ -66,6 +66,7 @@ public class VenueServiceImpl implements VenueService {
     private final FavoriteRepository favoriteRepository;
     private final CouponRepository couponRepository;
     private final ContactIntentRepository contactIntentRepository;
+    private final com.turfbook.backend.service.AdminPermissionService adminPermissionService;
 
     /** Venues at/below this court count submit for approval free (Starter tier defaulted). */
     private static final int FREE_COURT_THRESHOLD = 2;
@@ -389,6 +390,8 @@ public class VenueServiceImpl implements VenueService {
     @Transactional
     public VenueDetailDto updateVenueStatus(Long id, VenueStatusRequest request) {
         log.info("VenueService.updateVenueStatus() called - id={}, status={}", id, request.getStatus());
+        // Admin moderation: READ_ONLY admins may not change venue status.
+        adminPermissionService.requireWrite(adminPermissionService.currentActorId());
         VenueEntity venue = venueRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", id));
 
@@ -664,7 +667,8 @@ public class VenueServiceImpl implements VenueService {
         dto.setListingStatus(listingStatusOf(s));
         dto.setStatusLabel(statusLabelOf(s));
         dto.setStatusTone(statusToneOf(s));
-        dto.setAvailableActions(availableActionsOf(s));
+        // Role-filtered for admin callers (READ_ONLY → none); unchanged for owner/public callers.
+        dto.setAvailableActions(adminPermissionService.filterActions(availableActionsOf(s)));
         dto.setRejectionReason(latestCommentText(comments, "REJECTED"));
         dto.setChangeNotes(latestCommentText(comments, "CHANGES_REQUESTED"));
         dto.setSubmittedAt(venue.getCreatedAt() != null ? venue.getCreatedAt().atOffset(ZoneOffset.UTC) : null);
