@@ -245,6 +245,17 @@ public interface BookingRepository extends JpaRepository<BookingEntity, Long> {
             @Param("statuses") Collection<BookingEntity.BookingStatus> statuses,
             @Param("fromDate") LocalDate fromDate);
 
+    /**
+     * A player's upcoming bookings — the set cancelled when the player closes their account.
+     * Slot + venue are fetched so the caller can free the slot and notify the venue owner.
+     */
+    @Query("SELECT b FROM BookingEntity b LEFT JOIN FETCH b.slot LEFT JOIN FETCH b.venue "
+            + "WHERE b.player = :player AND b.status IN :statuses AND b.date >= :fromDate")
+    List<BookingEntity> findUpcomingForPlayer(
+            @Param("player") UserEntity player,
+            @Param("statuses") Collection<BookingEntity.BookingStatus> statuses,
+            @Param("fromDate") LocalDate fromDate);
+
     // Group booking lookup
     List<BookingEntity> findByGroupIdOrderByStartTimeAsc(String groupId);
 

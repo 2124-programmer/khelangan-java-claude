@@ -30,6 +30,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final NotificationMapper notificationMapper;
+    private final com.turfbook.backend.service.PushNotificationService pushNotificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -139,6 +140,9 @@ public class NotificationServiceImpl implements NotificationService {
                 .build();
         notificationRepository.save(notification);
         log.info("NotificationService.createNotification() completed - userId={}, title={}", user.getId(), title);
+
+        // Best-effort push to the user's devices (async, preference-gated, never blocks/fails here).
+        pushNotificationService.sendToUser(user, title, body, referenceId, referenceType);
     }
 
     @Override

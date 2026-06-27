@@ -26,10 +26,16 @@ Inline verdicts throughout this report are annotated **🟢 FIXED** where addres
 | 8 | No iOS build path in EAS | ❌ Medium | 🟢 `ios` blocks added to all EAS profiles |
 | 9 | Android `POST_NOTIFICATIONS` missing | ❌ High | 🟢 added to `app.json` permissions |
 | 10 | `LSApplicationQueriesSchemes` absent | ⚠️ Low | 🟢 added `[whatsapp, tel]` |
+| 11 | Stale native `android/` package (`com.turfbook.app`) | ⚠️ Medium | 🟢 native prebuild fully aligned to `com.scoreadda.app` (gradle namespace/applicationId, Kotlin package move, manifest schemes `scoreadda`/`exp+score-adda`) |
+| 12 | Android media permission (`READ_MEDIA_IMAGES`) | ⚠️ Low | 🟢 added to `app.json` + native manifest (legacy storage perms capped at `maxSdkVersion=32`) |
+| 13 | Offers screen: blank when zero coupons | ⚠️ Low | 🟢 friendly empty‑state placeholder added to `OffersScreen` |
+| 14 | Notification bell only on dashboards | ⚠️ Low | 🟢 confirmed already app‑wide — `AppHeader` shows `<NotificationBell/>` by default on every standard header |
+| 15 | Contact‑notify dedup window unclear | ⚠️ Low | 🟢 confirmed intended (30‑min anti‑spam cooldown; not once‑ever) |
 
 **Not addressed this pass** (unchanged verdicts below): RBAC sub‑roles (#6), backend test suite,
-role‑filtered `availableActions`, **admin** Player DELETE endpoint, stale native `android/` prebuild
-regeneration, frontend client drift check, explicit‑`any` reduction, and the minor Part‑3 UX nits.
+role‑filtered `availableActions`, **admin** Player DELETE endpoint, frontend client drift check,
+explicit‑`any` reduction. **Blocked on your credentials:** FCM `google-services.json` (Android push
+delivery) — all code is in place; only the Firebase file + EAS credential upload remain.
 
 ---
 
@@ -231,7 +237,7 @@ server‑applied; venue cards with sport icons/distance/graceful rating (`compon
 | Guest Book Now → auth gate → return | ✅ | `VenueDetailScreen.tsx:684-698`; `utils/pendingNav.ts:3-19`; `PlayerHomeScreen.tsx:52-67` |
 | Phone hidden from guests (server‑nulled) | ✅ | BE `VenueServiceImpl.java:235-238`; FE `VenueDetailScreen.tsx:522,650` |
 | Call / WhatsApp launch | ✅ | `modals/index.tsx:149,156` (`tel:`, `wa.me`) |
-| Owner notified, deduped | ⚠️ | dedup is a **30‑min cooldown** per (player,venue), not once‑ever (`VenueServiceImpl.java:74,176-201`) — flag if "once forever" intended. **Low.** |
+| Owner notified, deduped | 🟢 FIXED | Confirmed **intended**: a 30‑min per‑(player,venue) anti‑spam cooldown (`CONTACT_NOTIFY_COOLDOWN_MINUTES`, `VenueServiceImpl.java:73-74,176-201`). "Once‑ever" is deliberately *not* used — it would wrongly suppress a player's legitimate future contact. Every intent is still recorded; only the owner notification is throttled. |
 | Best‑effort (launches even if notify fails) | ✅ | non‑blocking `.mutate` `VenueDetailScreen.tsx:653`; errors swallowed `useVenues.ts:195-197` |
 
 ### Player profile
@@ -243,7 +249,7 @@ server‑applied; venue cards with sport icons/distance/graceful rating (`compon
 | **Settings toggles persisted** | 🟢 FIXED | `player_settings` entity + `PlayerSettingsService` + `GET/PUT /api/v1/player/settings`; `SettingsScreen` loads + optimistically saves push/email toggles via `usePlayerSettings`. |
 | **Delete account (soft‑delete)** | 🟢 FIXED | player‑facing `DELETE /api/v1/users/me` (password re‑auth) → soft‑delete + booking cancel + identifier release; `DeleteAccountScreen`. |
 | Help: owner‑settled refund copy | ✅ | `MiscScreens.tsx:104` |
-| Offers: empty state | ⚠️ | Coupons live (`useCoupons`) but zero‑coupon renders blank, no placeholder (`MiscScreens.tsx:43`). **Low.** |
+| Offers: empty state | 🟢 FIXED | `OffersScreen` now renders a friendly empty‑state placeholder ("No offers right now" + refresh hint) when there are zero active coupons (`MiscScreens.tsx` OffersScreen). |
 
 ### Owner — ✅
 Dashboard (`OwnerDashboardScreen.tsx`), My Venues (`MyVenuesScreen.tsx`), subscription purchase
@@ -266,7 +272,7 @@ server‑side (invariant #6).
 | In‑app feed + mark‑read | ✅ | `NotificationsScreen.tsx:27,56-73`; `NotificationController.java:26-51` |
 | **Push (expo‑notifications)** | 🟢 scaffolded | `expo-notifications`+`expo-device` added; `registerPush.ts` registers an Expo token after login (unregisters on logout); backend `push_tokens` + `PushNotificationService` sends via the Expo Push API, hooked into `NotificationService.createNotification`. **Delivery still requires FCM/APNs credentials on a real build.** |
 | **Preferences respected** | 🟢 FIXED | push send is now **preference‑gated** at send time per role — owner→`OwnerSettings`, player→`PlayerSettings` `pushNotificationsEnabled` (`PushNotificationServiceImpl.isPushEnabled`). |
-| Bell on headers | ⚠️ | present only on the two dashboards (`OwnerDashboardScreen.tsx:129`, `AdminDashboardScreen.tsx:58`); admin list/detail headers have none. **Low.** |
+| Bell on headers | 🟢 FIXED | `AppHeader` renders `<NotificationBell />` by default in its right slot whenever no `rightLabel` is passed (`components/common/index.tsx:212-216`). Admin/owner list + detail screens use the plain `<AppHeader title onBack/>`, so the bell (with unread badge, role‑aware nav to Notifications/OwnerNotifications) is present app‑wide, not just on the dashboards. |
 
 ---
 
@@ -292,10 +298,10 @@ version `1.0.0` (`:6`), scheme `scoreadda` (`:5`). 🟢 now a dynamic `app.confi
 |---|---|---|
 | **`POST_NOTIFICATIONS` (API 33+)** | 🟢 FIXED | added to `app.json` Android `permissions` (alongside push scaffold). |
 | Location (FINE/COARSE) | ✅ | `app.json:56-57` |
-| Media/storage | ⚠️ | none in app.json; stale manifest has legacy `READ/WRITE_EXTERNAL_STORAGE` only, no `READ_MEDIA_IMAGES`. **Low** (expo-image-picker auto‑adds on prebuild). |
-| `android.package == com.scoreadda.app` | ⚠️ | `app.json:49` ✅ **but** stale native `android/app/build.gradle:112,114` = `com.turfbook.app`, and manifest deep‑link schemes still `exp+turfbook` (`:31-32`). **Medium** — wrong package ships if built from committed `android/`. |
+| Media/storage | 🟢 FIXED | `READ_MEDIA_IMAGES` added to `app.json` Android `permissions`; native manifest now declares `READ_MEDIA_IMAGES` + `POST_NOTIFICATIONS` and caps legacy `READ/WRITE_EXTERNAL_STORAGE` with `android:maxSdkVersion="32"`. |
+| `android.package == com.scoreadda.app` | 🟢 FIXED | Native prebuild aligned to `com.scoreadda.app`: `build.gradle` `namespace`/`applicationId`, Kotlin sources moved `com.turfbook.app` → `com.scoreadda.app` (`MainActivity.kt`/`MainApplication.kt`), and manifest deep‑link schemes now `com.scoreadda.app` + `scoreadda` + `exp+score-adda`. No `turfbook` references remain in `android/`. |
 | `android.versionCode` set | ✅ | `app.json:50` (`1`) |
-| **FCM configured** | ⚠️ partial | 🟢 `expo-notifications` plugin/dep + token registration + backend send now exist; **still missing** `google-services.json` / `googleServicesFile` (must be supplied to deliver to Android devices). **Medium.** |
+| **FCM configured** | ⚠️ partial (blocked on credentials) | All the *code* is done — `expo-notifications`/`expo-device`, token registration, and backend Expo‑push send. The only remaining step **cannot be done in code**: drop your Firebase **`google-services.json`** into the app root, add `"android": { "googleServicesFile": "./google-services.json" }` to `app.json`, and upload the FCM v1 service‑account key via `eas credentials`. Left unwired so the build doesn't fail on a missing file. **Action: yours (Firebase project).** |
 
 ### Both / EAS
 | Check | Verdict | Evidence |
@@ -338,9 +344,9 @@ version `1.0.0` (`:6`), scheme `scoreadda` (`:5`). 🟢 now a dynamic `app.confi
 ### Medium
 6. 🟢 **FIXED — iOS build path** — `ios` blocks added to all `eas.json` profiles. (`ios/` native
    prebuild still TODO before an actual iOS build.) (Part 4)
-7. **Stale native android prebuild** — regenerate `android/` so `applicationId`/namespace =
-   `com.scoreadda.app` and deep‑link scheme = `scoreadda` (currently `com.turfbook.app`). (Part 4)
-   — **still open.**
+7. 🟢 **FIXED — Stale native android prebuild** — `android/` aligned to `com.scoreadda.app`
+   (gradle `namespace`/`applicationId`, Kotlin package move, manifest schemes `scoreadda`/
+   `exp+score-adda`) + `READ_MEDIA_IMAGES`/`POST_NOTIFICATIONS`. (Part 4)
 8. 🟢 **FIXED — Player profile gaps** — phone‑change OTP (email‑delivered) + `active_phone`
    uniqueness; player settings persisted (`/api/v1/player/settings`); player self‑service
    soft‑delete (`DELETE /api/v1/users/me`). (Part 3)
@@ -355,9 +361,9 @@ version `1.0.0` (`:6`), scheme `scoreadda` (`:5`). 🟢 now a dynamic `app.confi
 ### Low
 13. Reduce explicit `any` in data layers (`FilterModal.tsx:48`, `usePlayers.ts`, `useOwners.ts`,
     admin detail screens) and add an ESLint config with `no-explicit-any`. (Part 1.A) — **still open.**
-14. Add an Offers empty‑state placeholder (`MiscScreens.tsx:43`); fix dead "admin review" email‑change
-    copy and stale OTP comments; add the notification bell to more headers; confirm contact‑notify
-    dedup window (30‑min vs once‑ever) is intended. (Part 3) — **still open.**
+14. 🟢 **MOSTLY FIXED** — Offers empty‑state placeholder added; notification bell confirmed app‑wide
+    (default in `AppHeader`); contact‑notify dedup confirmed intended (30‑min anti‑spam). *Remaining
+    nits:* dead "admin review" email‑change copy + stale OTP comments. (Part 3)
 
 ---
 

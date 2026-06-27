@@ -2,15 +2,24 @@ package com.turfbook.backend.service.impl;
 
 import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
+import com.turfbook.backend.dto.DeleteAccountRequest;
+import com.turfbook.backend.dto.MessageResponse;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import com.turfbook.backend.dto.UserPage;
+import com.turfbook.backend.entity.BookingEntity;
+import com.turfbook.backend.entity.NotificationEntity;
+import com.turfbook.backend.entity.SlotEntity;
 import com.turfbook.backend.entity.UserEntity;
+import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.UserMapper;
+import com.turfbook.backend.repository.BookingRepository;
+import com.turfbook.backend.repository.SlotRepository;
 import com.turfbook.backend.repository.UserRepository;
 import com.turfbook.backend.security.JwtTokenProvider;
+import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +31,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,6 +44,13 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final BookingRepository bookingRepository;
+    private final SlotRepository slotRepository;
+    private final NotificationService notificationService;
+
+    /** Statuses considered "upcoming" when cancelling a closing player's bookings. */
+    private static final List<BookingEntity.BookingStatus> UPCOMING_STATUSES =
+            List.of(BookingEntity.BookingStatus.PENDING, BookingEntity.BookingStatus.CONFIRMED);
 
     @Override
     @Transactional(readOnly = true)
@@ -48,9 +68,9 @@ public class UserServiceImpl implements UserService {
         if (StringUtils.hasText(request.getName())) {
             user.setName(request.getName());
         }
-        if (StringUtils.hasText(request.getPhone())) {
-            user.setPhone(request.getPhone());
-        }
+        // Phone is intentionally NOT updated here: changing it requires OTP verification +
+        // active_phone uniqueness via the phone-change flow (see PhoneChangeService). A phone in
+        // this payload is ignored so a profile edit can't silently bypass verification.
         if (request.getAvatarUrl() != null) {
             user.setAvatarUrl(request.getAvatarUrl());
         }
@@ -61,6 +81,67 @@ public class UserServiceImpl implements UserService {
         UserDto result = userMapper.toDto(userRepository.save(user));
         log.info("UserService.updateMe() completed - userId={}", userId);
         return result;
+    }
+
+    @Override
+    @Transactional
+    public MessageResponse deleteMe(Long userId, DeleteAccountRequest request) {
+        log.info("UserService.deleteMe() called - userId={}", userId);
+        UserEntity user = getEntityById(userId);
+
+        if (user.getStatus() == UserEntity.AccountStatus.DELETED) {
+            throw new ConflictException("This account is already closed.");
+        }
+        if (request == null || !StringUtils.hasText(request.getPassword())
+                || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new UnauthorizedException("Incorrect password");
+        }
+
+        // Cancel the player's upcoming bookings: free the slot and notify the venue owner. (Owners
+        // closing their own account is out of scope here — owner closure with its venue/subscription
+        // cascade remains an admin action via AdminOwnerService.)
+        int bookingsCancelled = 0;
+        List<BookingEntity> upcoming = bookingRepository.findUpcomingForPlayer(
+                user, UPCOMING_STATUSES, LocalDate.now());
+        for (BookingEntity b : upcoming) {
+            b.setStatus(BookingEntity.BookingStatus.CANCELLED);
+            b.setCancellationReason(BookingEntity.CancellationReason.PLAYER);
+            SlotEntity slot = b.getSlot();
+            if (slot != null) {
+                slot.setStatus(SlotEntity.SlotStatus.AVAILABLE);
+                slotRepository.save(slot);
+            }
+            bookingRepository.save(b);
+            if (b.getVenue() != null && b.getVenue().getOwner() != null) {
+                notificationService.createNotification(
+                        b.getVenue().getOwner(),
+                        "Booking Cancelled",
+                        String.format("A booking at %s on %s was cancelled because the player closed their account.",
+                                b.getVenue().getName(), b.getDate()),
+                        NotificationEntity.NotificationType.BOOKING,
+                        String.valueOf(b.getId()), "BOOKING");
+            }
+            bookingsCancelled++;
+        }
+
+        // Soft-delete: retain the row for history, free active_* for reuse, force-logout all sessions.
+        user.setStatus(UserEntity.AccountStatus.DELETED);
+        user.setBlocked(true);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        user.setActiveEmail(null);
+        user.setActivePhone(null);
+        user.setDeletedAt(LocalDateTime.now());
+        user.setDeletedBy(userId); // self
+        user.setDeletedReason(StringUtils.hasText(request.getReason())
+                ? request.getReason() : "Account closed by user.");
+        user.setDeletedBookingsCancelled(bookingsCancelled);
+        userRepository.save(user);
+
+        log.info("UserService.deleteMe() completed - userId={} self-closed, {} booking(s) cancelled.",
+                userId, bookingsCancelled);
+        MessageResponse response = new MessageResponse();
+        response.setMessage("Your account has been closed.");
+        return response;
     }
 
     @Override

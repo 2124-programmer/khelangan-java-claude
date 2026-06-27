@@ -70,6 +70,18 @@ public class MailServiceImpl implements MailService {
 
     @Override
     @Async("mailExecutor")
+    public void sendPhoneChangeVerificationOtp(String toEmail, String otp, int expiresInMinutes) {
+        String subject = "Verify your Score-Adda phone number change";
+        String text = "Your Score-Adda phone change verification code is: " + otp + "\n\n"
+                + "This code expires in " + expiresInMinutes + " minutes. Do not share it with anyone.\n\n"
+                + "If you didn't request a phone number change on Score-Adda, please ignore this email.";
+        String html = otpHtml("Verify your phone change",
+                "Use this code to confirm the new phone number on your Score-Adda account:", otp, expiresInMinutes);
+        send(toEmail, subject, text, html);
+    }
+
+    @Override
+    @Async("mailExecutor")
     public void sendEmailChangeApproved(String toEmail, String newEmail) {
         String subject = "Your Score-Adda email address was updated";
         String text = "Your account email has been successfully changed to: " + newEmail + "\n\n"
