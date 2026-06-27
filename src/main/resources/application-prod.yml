@@ -1,0 +1,127 @@
+# ============================================================================
+#  PRODUCTION profile  —  activate with:  SPRING_PROFILES_ACTIVE=prod
+# ----------------------------------------------------------------------------
+#  Overrides the base application.yml. Every secret/host is env-only with NO
+#  default, so the app FAILS FAST on startup if something is unset rather than
+#  silently booting with the dev Gmail password / weak JWT key baked into the
+#  base file. Set these in the host environment (systemd unit, container env,
+#  secrets manager) — never commit real values here.
+#
+#  Required env vars:
+#    DB_URL  DB_USER  DB_PASS
+#    MAIL_HOST  MAIL_PORT  MAIL_USER  MAIL_PASS
+#    JWT_SECRET   (>= 256-bit / 32+ random chars)
+#    BASE_URL     (public https origin, e.g. https://api.score-adda.com)
+#    UPLOAD_DIR   (absolute path on a persistent volume)
+#  Optional: PORT, *_LOG_LEVEL
+# ============================================================================
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+
+  jpa:
+    hibernate:
+      # Kept at `update` because schema management relies on Hibernate adding the
+      # active_email/active_phone columns before ActiveIdentifierMigration runs.
+      # Hardening path for later: switch to `validate` and own the schema with Flyway.
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        # Dialect is auto-detected from the JDBC connection; specifying it is deprecated.
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: false
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT}
+    username: ${MAIL_USER}
+    password: ${MAIL_PASS}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+        debug: false
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 20MB
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: 86400000  # 24 hours
+  upload:
+    dir: ${UPLOAD_DIR}
+  base-url: ${BASE_URL}
+  otp:
+    # Never log OTP codes in production.
+    debug-log-codes: false
+
+server:
+  port: ${PORT:8080}
+  # Honour X-Forwarded-* from the load balancer / reverse proxy so generated
+  # links and client IPs use the real public https origin.
+  forward-headers-strategy: framework
+  servlet:
+    context-path: /
+  error:
+    # Surface validation messages to API clients, but never leak stack traces.
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: never
+    include-exception: false
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain
+    min-response-size: 1024
+
+# API docs / Swagger UI are disabled in production to avoid exposing the API surface.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+  show-actuator: false
+
+logging:
+  level:
+    com.turfbook.backend: ${APP_LOG_LEVEL:INFO}
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.springframework.mail: ${MAIL_LOG_LEVEL:WARN}
