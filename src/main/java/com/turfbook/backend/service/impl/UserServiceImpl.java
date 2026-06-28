@@ -1,5 +1,6 @@
 package com.turfbook.backend.service.impl;
 
+import com.turfbook.backend.dto.AdminSummaryDto;
 import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
@@ -226,6 +227,27 @@ public class UserServiceImpl implements UserService {
         UserEntity user = getEntityById(id);
         user.setBlocked(false);
         return userMapper.toDto(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.List<AdminSummaryDto> listAdmins(Long actorId) {
+        adminPermissionService.requireModerateHard(actorId); // SUPER_ADMIN only
+        return userRepository.findByRole(UserEntity.Role.ADMIN).stream()
+                .filter(u -> u.getStatus() != UserEntity.AccountStatus.DELETED)
+                .sorted(java.util.Comparator.comparing(UserEntity::getId))
+                .map(u -> {
+                    AdminSummaryDto dto = new AdminSummaryDto();
+                    dto.setId(u.getId());
+                    dto.setName(u.getName());
+                    dto.setEmail(u.getEmail());
+                    dto.setAvatarUrl(u.getAvatarUrl());
+                    // Effective role: legacy NULL ⇒ SUPER_ADMIN (mirrors AdminPermissionService.roleOf).
+                    dto.setAdminRole(u.getAdminRole() != null ? u.getAdminRole().name() : "SUPER_ADMIN");
+                    dto.setSelf(u.getId().equals(actorId));
+                    return dto;
+                })
+                .toList();
     }
 
     @Override

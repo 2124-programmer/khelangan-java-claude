@@ -1,5 +1,6 @@
 package com.turfbook.backend.service;
 
+import com.turfbook.backend.dto.AdminSummaryDto;
 import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
@@ -34,6 +35,9 @@ public interface UserService {
     UserDto blockUser(Long id);
 
     UserDto unblockUser(Long id);
+
+    /** List all admin accounts with their effective sub-role (SUPER_ADMIN only). */
+    java.util.List<AdminSummaryDto> listAdmins(Long actorId);
 
     /** Assign an admin sub-role to an ADMIN user (SUPER_ADMIN only). */
     MessageResponse setAdminRole(Long actorId, Long targetUserId, SetAdminRoleRequest request);

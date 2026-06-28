@@ -145,6 +145,9 @@ components:
           type: string
         role:
           type: string
+        adminRole:
+          type: string
+          description: Effective admin sub-role (SUPER_ADMIN / SUPPORT / READ_ONLY); null for non-admins. Legacy admins with no stored sub-role resolve to SUPER_ADMIN.
         avatarUrl:
           type: string
         preferredSports:

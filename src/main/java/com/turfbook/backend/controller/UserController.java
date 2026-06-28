@@ -1,6 +1,7 @@
 package com.turfbook.backend.controller;
 
 import com.turfbook.backend.api.UsersApi;
+import com.turfbook.backend.dto.AdminSummaryDto;
 import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,6 +61,15 @@ public class UserController implements UsersApi {
         UserPrincipal principal = getPrincipal();
         log.info("UserController.deleteMe() called - userId={}", principal.getId());
         return ResponseEntity.ok(userService.deleteMe(principal.getId(), request));
+    }
+
+    /** List all admins with their effective sub-role (SUPER_ADMIN only — enforced in the service). */
+    @GetMapping("/api/v1/admin/admins")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<java.util.List<AdminSummaryDto>> listAdmins() {
+        UserPrincipal principal = getPrincipal();
+        log.info("UserController.listAdmins() called - actorId={}", principal.getId());
+        return ResponseEntity.ok(userService.listAdmins(principal.getId()));
     }
 
     /** Assign an admin sub-role (SUPER_ADMIN only — enforced in the service). */
