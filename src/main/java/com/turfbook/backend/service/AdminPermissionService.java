@@ -66,6 +66,13 @@ public class AdminPermissionService {
         }
     }
 
+    /** Gate super-admin-only configuration (platform settings, app config) to SUPER_ADMIN only. */
+    public void requireSuperAdmin(Long actorId) {
+        if (!canModerateHard(actorId)) {
+            throw new ForbiddenException("Only a super-admin can manage platform settings.");
+        }
+    }
+
     /**
      * Role-filter a server-computed {@code availableActions} list for the CURRENT caller:
      * READ_ONLY → none; SUPPORT → minus ban/unban/delete; SUPER_ADMIN → unchanged.

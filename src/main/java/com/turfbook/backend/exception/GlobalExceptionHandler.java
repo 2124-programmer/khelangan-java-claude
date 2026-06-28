@@ -3,6 +3,7 @@ package com.turfbook.backend.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -164,6 +165,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex,
                                                                 HttpServletRequest request) {
         return buildResponse(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), request, null);
+    }
+
+    /**
+     * A DB constraint blocked the write (duplicate unique key, NOT-NULL violation, etc.). Without
+     * this it fell through to the generic 500; now the client gets an actionable 409 so the user
+     * knows the data — not the server — was the problem. The root cause is still logged server-side.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex,
+                                                             HttpServletRequest request) {
+        log.warn("Data integrity violation at {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
+        return buildResponse(HttpStatus.CONFLICT, "DATA_CONFLICT",
+                "That request conflicts with existing data (a value may already be in use). "
+                        + "Please review the details and try again.", request, null);
     }
 
     @ExceptionHandler(Exception.class)

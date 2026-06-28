@@ -309,6 +309,9 @@ public class UserServiceImpl implements UserService {
                 .name(request.getName().trim())
                 .email(email)
                 .activeEmail(email)
+                // Admins are created without a phone, but the column is NOT NULL. Store an empty
+                // string (active_phone stays NULL so it never collides on the unique index).
+                .phone("")
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(UserEntity.Role.ADMIN)
                 .adminRole(role)

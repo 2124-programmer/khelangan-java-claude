@@ -10,6 +10,7 @@ import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.entity.VenueEntity;
 import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.repository.*;
+import com.turfbook.backend.service.AdminPermissionService;
 import com.turfbook.backend.service.AdminService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,7 @@ public class AdminServiceImpl implements AdminService {
     private final VenueRepository venueRepository;
     private final DisputeRepository disputeRepository;
     private final PlatformSettingsRepository settingsRepository;
+    private final AdminPermissionService adminPermissionService;
 
     @Override
     @Transactional(readOnly = true)
@@ -68,6 +70,7 @@ public class AdminServiceImpl implements AdminService {
     @Transactional(readOnly = true)
     public PlatformSettingsDto getSettings() {
         log.info("AdminService.getSettings() called");
+        adminPermissionService.requireSuperAdmin(adminPermissionService.currentActorId()); // SUPER_ADMIN only
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(this::createDefaultSettings);
         return toDto(settings);
@@ -77,6 +80,7 @@ public class AdminServiceImpl implements AdminService {
     @Transactional
     public PlatformSettingsDto updateSettings(UpdateSettingsRequest request) {
         log.info("AdminService.updateSettings() called");
+        adminPermissionService.requireSuperAdmin(adminPermissionService.currentActorId()); // SUPER_ADMIN only
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(this::createDefaultSettings);
 
