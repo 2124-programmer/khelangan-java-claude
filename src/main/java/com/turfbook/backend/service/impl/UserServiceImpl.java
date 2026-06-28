@@ -3,8 +3,10 @@ package com.turfbook.backend.service.impl;
 import com.turfbook.backend.dto.AdminSummaryDto;
 import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
+import com.turfbook.backend.dto.CreateAdminRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
 import com.turfbook.backend.dto.MessageResponse;
+import com.turfbook.backend.dto.PromoteAdminRequest;
 import com.turfbook.backend.dto.SetAdminRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
@@ -236,31 +238,38 @@ public class UserServiceImpl implements UserService {
         return userRepository.findByRole(UserEntity.Role.ADMIN).stream()
                 .filter(u -> u.getStatus() != UserEntity.AccountStatus.DELETED)
                 .sorted(java.util.Comparator.comparing(UserEntity::getId))
-                .map(u -> {
-                    AdminSummaryDto dto = new AdminSummaryDto();
-                    dto.setId(u.getId());
-                    dto.setName(u.getName());
-                    dto.setEmail(u.getEmail());
-                    dto.setAvatarUrl(u.getAvatarUrl());
-                    // Effective role: legacy NULL ⇒ SUPER_ADMIN (mirrors AdminPermissionService.roleOf).
-                    dto.setAdminRole(u.getAdminRole() != null ? u.getAdminRole().name() : "SUPER_ADMIN");
-                    dto.setSelf(u.getId().equals(actorId));
-                    return dto;
-                })
+                .map(u -> toAdminSummary(u, actorId))
                 .toList();
+    }
+
+    /** Map an ADMIN user to its summary DTO; effective role legacy-NULL ⇒ SUPER_ADMIN. */
+    private AdminSummaryDto toAdminSummary(UserEntity u, Long actorId) {
+        AdminSummaryDto dto = new AdminSummaryDto();
+        dto.setId(u.getId());
+        dto.setName(u.getName());
+        dto.setEmail(u.getEmail());
+        dto.setAvatarUrl(u.getAvatarUrl());
+        // Effective role: legacy NULL ⇒ SUPER_ADMIN (mirrors AdminPermissionService.roleOf).
+        dto.setAdminRole(u.getAdminRole() != null ? u.getAdminRole().name() : "SUPER_ADMIN");
+        dto.setSelf(u.getId().equals(actorId));
+        return dto;
+    }
+
+    /** Parse & validate an admin sub-role string into the enum, or throw a 400. */
+    private UserEntity.AdminRole parseAdminRole(String raw) {
+        try {
+            return UserEntity.AdminRole.valueOf(raw.trim().toUpperCase());
+        } catch (Exception e) {
+            throw new com.turfbook.backend.exception.BadRequestException(
+                    "adminRole must be one of SUPER_ADMIN, SUPPORT, READ_ONLY.");
+        }
     }
 
     @Override
     @Transactional
     public MessageResponse setAdminRole(Long actorId, Long targetUserId, SetAdminRoleRequest request) {
         adminPermissionService.requireModerateHard(actorId); // SUPER_ADMIN only
-        UserEntity.AdminRole role;
-        try {
-            role = UserEntity.AdminRole.valueOf(request.getAdminRole().trim().toUpperCase());
-        } catch (Exception e) {
-            throw new com.turfbook.backend.exception.BadRequestException(
-                    "adminRole must be one of SUPER_ADMIN, SUPPORT, READ_ONLY.");
-        }
+        UserEntity.AdminRole role = parseAdminRole(request.getAdminRole());
         UserEntity target = getEntityById(targetUserId);
         if (target.getRole() != UserEntity.Role.ADMIN) {
             throw new com.turfbook.backend.exception.ConflictException("Admin sub-roles apply only to ADMIN users.");
@@ -271,6 +280,113 @@ public class UserServiceImpl implements UserService {
         log.info("UserService.setAdminRole() - actor={} set user={} adminRole={}", actorId, targetUserId, role);
         MessageResponse response = new MessageResponse();
         response.setMessage("Admin role updated to " + role.name() + ".");
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public AdminSummaryDto createAdmin(Long actorId, CreateAdminRequest request) {
+        adminPermissionService.requireModerateHard(actorId); // SUPER_ADMIN only
+        UserEntity.AdminRole role = parseAdminRole(request.getAdminRole());
+
+        String email = request.getEmail().toLowerCase().trim();
+        // Mirror the AuthService password policy so admin-created accounts are just as strong.
+        if (request.getPassword() == null || request.getPassword().length() < 8) {
+            throw new com.turfbook.backend.exception.BadRequestException("Password must be at least 8 characters.");
+        }
+        boolean hasLetter = request.getPassword().chars().anyMatch(Character::isLetter);
+        boolean hasDigit = request.getPassword().chars().anyMatch(Character::isDigit);
+        if (!hasLetter || !hasDigit) {
+            throw new com.turfbook.backend.exception.BadRequestException(
+                    "Password must contain at least one letter and one digit.");
+        }
+        // Uniqueness against active_email so freed (deleted) identifiers don't falsely collide.
+        if (userRepository.existsByActiveEmail(email)) {
+            throw new ConflictException("Email already registered: " + request.getEmail());
+        }
+
+        UserEntity admin = UserEntity.builder()
+                .name(request.getName().trim())
+                .email(email)
+                .activeEmail(email)
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .role(UserEntity.Role.ADMIN)
+                .adminRole(role)
+                .phoneVerified(false)
+                .acceptedTermsAt(LocalDateTime.now())
+                .build();
+        admin = userRepository.save(admin);
+
+        log.info("UserService.createAdmin() - actor={} created admin={} adminRole={}", actorId, admin.getId(), role);
+        return toAdminSummary(admin, actorId);
+    }
+
+    @Override
+    @Transactional
+    public AdminSummaryDto promoteToAdmin(Long actorId, PromoteAdminRequest request) {
+        adminPermissionService.requireModerateHard(actorId); // SUPER_ADMIN only
+        UserEntity.AdminRole role = parseAdminRole(request.getAdminRole());
+
+        String email = request.getEmail().toLowerCase().trim();
+        UserEntity target = userRepository.findByActiveEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No active account found for email: " + request.getEmail()));
+        if (target.getStatus() == UserEntity.AccountStatus.DELETED) {
+            throw new ConflictException("That account is closed and cannot be promoted.");
+        }
+        if (target.getRole() == UserEntity.Role.ADMIN) {
+            throw new ConflictException("That user is already an admin.");
+        }
+
+        target.setRole(UserEntity.Role.ADMIN);
+        target.setAdminRole(role);
+        target.setTokenVersion(target.getTokenVersion() + 1); // re-issue so the new role takes effect
+        userRepository.save(target);
+
+        log.info("UserService.promoteToAdmin() - actor={} promoted user={} adminRole={}", actorId, target.getId(), role);
+        return toAdminSummary(target, actorId);
+    }
+
+    @Override
+    @Transactional
+    public MessageResponse removeAdmin(Long actorId, Long targetUserId, String mode) {
+        adminPermissionService.requireModerateHard(actorId); // SUPER_ADMIN only
+        if (targetUserId.equals(actorId)) {
+            throw new com.turfbook.backend.exception.BadRequestException(
+                    "You can't remove your own admin access — ask another super-admin.");
+        }
+        UserEntity target = getEntityById(targetUserId);
+        if (target.getRole() != UserEntity.Role.ADMIN) {
+            throw new ConflictException("That user is not an admin.");
+        }
+
+        String normalized = mode == null ? "demote" : mode.trim().toLowerCase();
+        MessageResponse response = new MessageResponse();
+        if ("deactivate".equals(normalized)) {
+            // Soft-delete: retain the row, free active_* for reuse, force-logout all sessions.
+            target.setStatus(UserEntity.AccountStatus.DELETED);
+            target.setBlocked(true);
+            target.setTokenVersion(target.getTokenVersion() + 1);
+            target.setActiveEmail(null);
+            target.setActivePhone(null);
+            target.setDeletedAt(LocalDateTime.now());
+            target.setDeletedBy(actorId);
+            target.setDeletedReason("Admin account deactivated by super-admin.");
+            userRepository.save(target);
+            log.info("UserService.removeAdmin() - actor={} deactivated admin={}", actorId, targetUserId);
+            response.setMessage("Admin account deactivated.");
+        } else if ("demote".equals(normalized)) {
+            // Revoke admin access but keep the account: revert to a regular player.
+            target.setRole(UserEntity.Role.PLAYER);
+            target.setAdminRole(null);
+            target.setTokenVersion(target.getTokenVersion() + 1);
+            userRepository.save(target);
+            log.info("UserService.removeAdmin() - actor={} demoted admin={} to player", actorId, targetUserId);
+            response.setMessage("Admin access revoked. The account is now a regular user.");
+        } else {
+            throw new com.turfbook.backend.exception.BadRequestException(
+                    "mode must be either 'demote' or 'deactivate'.");
+        }
         return response;
     }
 

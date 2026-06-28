@@ -3,8 +3,10 @@ package com.turfbook.backend.service;
 import com.turfbook.backend.dto.AdminSummaryDto;
 import com.turfbook.backend.dto.AuthResponse;
 import com.turfbook.backend.dto.ChangeRoleRequest;
+import com.turfbook.backend.dto.CreateAdminRequest;
 import com.turfbook.backend.dto.DeleteAccountRequest;
 import com.turfbook.backend.dto.MessageResponse;
+import com.turfbook.backend.dto.PromoteAdminRequest;
 import com.turfbook.backend.dto.SetAdminRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
@@ -41,6 +43,18 @@ public interface UserService {
 
     /** Assign an admin sub-role to an ADMIN user (SUPER_ADMIN only). */
     MessageResponse setAdminRole(Long actorId, Long targetUserId, SetAdminRoleRequest request);
+
+    /** Create a brand-new ADMIN account with the given sub-role (SUPER_ADMIN only). */
+    AdminSummaryDto createAdmin(Long actorId, CreateAdminRequest request);
+
+    /** Promote an existing non-admin user to ADMIN by email (SUPER_ADMIN only). */
+    AdminSummaryDto promoteToAdmin(Long actorId, PromoteAdminRequest request);
+
+    /**
+     * Remove an admin (SUPER_ADMIN only). {@code mode}:
+     * "demote" reverts the account to a PLAYER (keeps login); "deactivate" soft-deletes it.
+     */
+    MessageResponse removeAdmin(Long actorId, Long targetUserId, String mode);
 
     UserEntity getEntityById(Long id);
 }
