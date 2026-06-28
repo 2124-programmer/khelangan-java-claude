@@ -2,8 +2,10 @@ package com.turfbook.backend.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
@@ -22,6 +24,21 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    /** Configured multipart cap (e.g. "5MB"); surfaced in the too-large message so the user knows the limit. */
+    @Value("${spring.servlet.multipart.max-file-size:5MB}")
+    private String maxFileSize;
+
+    /**
+     * A multipart upload exceeded the configured size cap. Without this it fell through to the
+     * generic 500 ("An unexpected error occurred"); now the client gets a clear, actionable message.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUpload(MaxUploadSizeExceededException ex,
+                                                         HttpServletRequest request) {
+        return buildResponse(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE",
+                "Image is too large. Please choose an image under " + maxFileSize + ".", request, null);
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex,
