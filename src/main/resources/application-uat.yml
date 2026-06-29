@@ -14,7 +14,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     show-sql: false
     open-in-view: false
     properties:
@@ -50,7 +50,7 @@ app:
     secret: ${JWT_SECRET}
     expiration-ms: 86400000
   upload:
-    dir: ${UPLOAD_DIR:uploads}
+    dir: ${UPLOAD_DIR:data/uploads}
   base-url: ${BASE_URL}
 
 server:
