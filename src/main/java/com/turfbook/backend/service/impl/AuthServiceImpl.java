@@ -127,11 +127,8 @@ public class AuthServiceImpl implements AuthService {
 
         user = userRepository.save(user);
 
-        String token = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
-
         AuthResponse response = new AuthResponse();
-        response.setToken(token);
-        response.setRefreshToken(token);
+        issueTokens(response, user);
         response.setUser(userMapper.toDto(user));
         log.info("AuthService.register() completed - userId={}, role={}", user.getId(), user.getRole());
         return response;
@@ -170,11 +167,8 @@ public class AuthServiceImpl implements AuthService {
             throw new ForbiddenException(blockedMessageFor(email));
         }
 
-        String token = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
-
         AuthResponse response = new AuthResponse();
-        response.setToken(token);
-        response.setRefreshToken(token);
+        issueTokens(response, user);
         response.setUser(userMapper.toDto(user));
         log.info("AuthService.login() completed - userId={}, role={}", user.getId(), user.getRole());
         return response;
@@ -266,10 +260,8 @@ public class AuthServiceImpl implements AuthService {
             throw new ForbiddenException(blockedMessageFor(email));
         }
 
-        String token = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
         AuthResponse response = new AuthResponse();
-        response.setToken(token);
-        response.setRefreshToken(token);
+        issueTokens(response, user);
         response.setUser(userMapper.toDto(user));
         return response;
     }
@@ -294,18 +286,33 @@ public class AuthServiceImpl implements AuthService {
         if (!tokenProvider.validateToken(refreshToken)) {
             throw new UnauthorizedException("Invalid or expired refresh token");
         }
+        // An access token must never be replayable at the refresh endpoint. Legacy tokens
+        // (issued before token typing, type == null) are still accepted for a smooth migration.
+        if (JwtTokenProvider.TYPE_ACCESS.equals(tokenProvider.getTokenType(refreshToken))) {
+            throw new UnauthorizedException("Invalid refresh token");
+        }
 
         Long userId = tokenProvider.getUserIdFromToken(refreshToken);
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
+        // Refresh tokens are revoked when the session is bumped (password change/reset, logout).
+        if (tokenProvider.getTokenVersionFromToken(refreshToken) != user.getTokenVersion()) {
+            throw new UnauthorizedException("Refresh token has been revoked");
+        }
 
-        String newToken = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
-
+        // Rotation: every refresh mints a brand-new access + refresh pair.
         AuthResponse response = new AuthResponse();
-        response.setToken(newToken);
-        response.setRefreshToken(newToken);
+        issueTokens(response, user);
         response.setUser(userMapper.toDto(user));
         return response;
+    }
+
+    /** Issue a distinct short-lived access token and long-lived refresh token onto the response. */
+    private void issueTokens(AuthResponse response, UserEntity user) {
+        response.setToken(tokenProvider.generateToken(
+                user.getId(), user.getRole().name(), user.getTokenVersion()));
+        response.setRefreshToken(tokenProvider.generateRefreshToken(
+                user.getId(), user.getRole().name(), user.getTokenVersion()));
     }
 
     // ── Change password (authenticated) ──────────────────────────────────────
@@ -333,11 +340,9 @@ public class AuthServiceImpl implements AuthService {
         user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
 
-        // Issue fresh token for the current device
-        String newToken = tokenProvider.generateToken(user.getId(), user.getRole().name(), user.getTokenVersion());
+        // Issue a fresh access + refresh pair for the current device
         AuthResponse response = new AuthResponse();
-        response.setToken(newToken);
-        response.setRefreshToken(newToken);
+        issueTokens(response, user);
         response.setUser(userMapper.toDto(user));
         log.info("AuthService.changePassword() completed - userId={}", userId);
         return response;

@@ -36,6 +36,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = getJwtFromRequest(request);
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
+                // Refresh tokens are only valid at /auth/refresh — never for authenticating API calls.
+                if (JwtTokenProvider.TYPE_REFRESH.equals(tokenProvider.getTokenType(jwt))) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 Long userId = tokenProvider.getUserIdFromToken(jwt);
                 int jwtVersion = tokenProvider.getTokenVersionFromToken(jwt);
 

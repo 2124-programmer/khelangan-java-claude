@@ -20,6 +20,13 @@ public class JwtTokenProvider {
     @Value("${app.jwt.expiration-ms}")
     private long jwtExpirationMs;
 
+    /** Refresh tokens live much longer than access tokens. Default: 30 days. */
+    @Value("${app.jwt.refresh-expiration-ms:2592000000}")
+    private long jwtRefreshExpirationMs;
+
+    public static final String TYPE_ACCESS = "access";
+    public static final String TYPE_REFRESH = "refresh";
+
     private SecretKey getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(
                 java.util.Base64.getEncoder().encodeToString(jwtSecret.getBytes())
@@ -27,18 +34,34 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
+    /** Short-lived access token used to authenticate API requests. */
     public String generateToken(Long userId, String role, int tokenVersion) {
+        return buildToken(userId, role, tokenVersion, TYPE_ACCESS, jwtExpirationMs);
+    }
+
+    /** Long-lived refresh token, exchanged at /auth/refresh for a fresh access+refresh pair. */
+    public String generateRefreshToken(Long userId, String role, int tokenVersion) {
+        return buildToken(userId, role, tokenVersion, TYPE_REFRESH, jwtRefreshExpirationMs);
+    }
+
+    private String buildToken(Long userId, String role, int tokenVersion, String type, long ttlMs) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
+        Date expiryDate = new Date(now.getTime() + ttlMs);
 
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("role", role)
                 .claim("tv", tokenVersion)
+                .claim("type", type)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
                 .compact();
+    }
+
+    /** Token type claim ("access"/"refresh"); null for legacy tokens issued before typing. */
+    public String getTokenType(String token) {
+        return parseClaims(token).get("type", String.class);
     }
 
     public Long getUserIdFromToken(String token) {

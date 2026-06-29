@@ -8,13 +8,30 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 
 | Area | ✅ Done | 🟡 Improvement | 🔴 To implement |
 |---|---|---|---|
-| A. E2E cases (by role) | 48 | 4 | 2 |
-| B. Security | 10 | 6 | 0 |
-| C. API efficiency | 3 | 3 | 0 |
-| D. Cross-platform | 5 | 5 | 1 |
-| **Total** | **66** | **18** | **3** |
+| A. E2E cases (by role) | 50 | 2 | 2 |
+| B. Security | 12 | 4 | 0 |
+| C. API efficiency | 6 | 0 | 0 |
+| D. Cross-platform | 8 | 2 | 1 |
+| **Total** | **76** | **8** | **3** |
 
-### Prioritized action list (High → Low)
+> **Update (2026-06-28):** 10 audit items were implemented/resolved in this pass — see the
+> "Resolved this pass" list below. Counts above reflect the new state.
+
+### Resolved this pass ✅
+| Was | Item | Resolution |
+|---|---|---|
+| 🟡 B-03 | Refresh-token rotation | Distinct typed access/refresh tokens; `/auth/refresh` now requires a refresh token, enforces `tokenVersion`, and rotates a new pair each call (`JwtTokenProvider`, `AuthServiceImpl.refreshToken`, `JwtAuthenticationFilter`). Server-side reuse-detection store still a future enhancement. |
+| 🟡 B-16 | API rate-limiting on writes | `RateLimitInterceptor` throttles POST/PUT/PATCH/DELETE per user/IP (120/min) → 429; registered in `RateLimitConfig`. |
+| 🟡 C-03 | Duplicate `/venues` + `/sports` | `useVenues` + `useInfiniteVenues` given `staleTime: 60_000` so remounts reuse cache (`useSports` already 10-min). |
+| 🟡 C-04 | Slot cache staleness | `SlotSelectionScreen` re-fetches slots on screen focus (skips initial mount). |
+| 🟡 C-06 | Notification polling | List poll → 60s + `refetchIntervalInBackground:false`; badge poll aligned to 60s. |
+| 🟡 D-02 | Mixed SafeAreaView API | 28 player/owner/auth screens migrated to `react-native-safe-area-context` with `edges={['top']}` (codemod). |
+| 🟡 D-03 | Keyboard avoidance | `KeyboardAvoidingView` added to Login/Register/OTP/ForgotPassword. |
+| 🟡 D-08 | Android hardware-back | `useAndroidBack` hook + ForgotPassword steps back on hardware back. |
+| 🟡 PL-16 | Change-phone flow | Already complete end-to-end (`PhoneChangeController` + `usePhoneChange`); earlier 🟡 was a false flag. |
+| 🟡 OW-13 | Owner earnings/payouts | Endpoints exist & owner-scoped (`PayoutController.listOwnerPayouts`, `VenueController.getOwnerStats`); earlier 🟡 was a false flag. |
+
+### Prioritized action list — remaining (High → Low)
 
 **High**
 | # | Item | Status | Where |
@@ -28,23 +45,72 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 **Medium**
 | # | Item | Status | Where |
 |---|---|---|---|
-| 6 | Refresh-token rotation (currently `refreshToken == token`) | 🟡 | B-03 |
-| 7 | General API rate-limiting on mutating endpoints (only auth is throttled) | 🟡 | B-16 |
-| 8 | In-memory rate limiters → shared store (Redis) for multi-instance | 🟡 | B-12 |
-| 9 | Keyboard avoidance on auth/forms (iOS) | 🟡 | D-03 |
-| 10 | Duplicate `/venues` + `/sports` fetches across screens | 🟡 | C-03 |
-| 11 | Slot cache: no invalidation on screen re-focus (stale availability) | 🟡 | C-04 |
-| 12 | Complete the change-phone flow | 🟡 | PL-16 |
+| 6 | In-memory rate limiters → Redis/DB. **Accepted/deferred** — not needed at current scale (single instance, ~550 users); revisit only before scaling to 2+ instances | 🟡 (accepted) | B-12 |
 
 **Low**
 | # | Item | Status | Where |
 |---|---|---|---|
-| 13 | Admin-action audit logging | 🟡 | B-13 |
-| 14 | Notification polling → push-driven refresh | 🟡 | C-06 |
-| 15 | Unify mixed `SafeAreaView` API (legacy RN vs safe-area-context) | 🟡 | D-02 |
-| 16 | Android hardware-back handling | 🟡 | D-08 |
-| 17 | Custom fonts + full dark-mode theme | 🟡 | D-09 |
-| 18 | Verify owner earnings/payouts endpoints | 🟡 | OW-13 |
+| 7 | Admin-action audit logging | 🟡 | B-13 |
+| 8 | Custom fonts + full dark-mode theme | 🟡 | D-09 |
+
+---
+
+## Section F — Pending items (detailed)
+
+Everything still open after this pass — what exists today, why it matters, and what implementing it takes. Grouped 🔴 (build) then 🟡 (improve). **2 features + 6 improvements remain** (one of which, B-12, is an accepted/deferred decision). Effort key: S = hours, M = 1–3 days, L = ≥ a week.
+
+### 🔴 To implement
+
+#### F1 · Google Sign-In  — `PL-04`, `D-04` · Priority **High** · Effort **M**
+- **Current state:** No social login anywhere. No `@react-native-google-signin/google-signin` / `expo-auth-session` dependency; no iOS URL scheme or Android SHA wiring; no backend OAuth / `id_token` verification endpoint (absent from `api.yaml`).
+- **Why it matters:** Listed as a core auth method in the brief; reduces sign-in drop-off.
+- **What it takes:**
+  1. **FE** — add the Google Sign-In dependency; configure web/iOS/Android client IDs; add a "Continue with Google" button to `LoginScreen`/`RegisterScreen`.
+  2. **Native** — iOS reversed-client-ID URL scheme; Android release SHA-1 (depends on F5).
+  3. **BE** — `POST /api/v1/auth/google` that verifies the Google `id_token`, finds-or-creates the user (force non-ADMIN, set `active_email`), and returns the standard `AuthResponse`, reusing `AuthServiceImpl.issueTokens()`.
+- **Blocked by:** F5 (Android needs a stable signing SHA-1).
+
+#### F2 · Owner-authored venue coupons on the player home card  — `OW-12`, `PL-19`, `AD-10` · Priority **High** · Effort **M–L**
+- **Current state:** A working but **global** coupon engine — admin CRUD (`/api/v1/admin/coupons`) + player list/validate (`/api/v1/coupons`, `/coupons/validate`) in `CouponServiceImpl`. `CouponEntity` has **no venue/owner FK**, there is **no owner endpoint**, and coupons are **not surfaced on venue cards**.
+- **Why it matters:** The intended model is owners create offers for their own venue, shown on that venue's card on the player Home — a discovery/conversion driver. Today owners can't create offers at all.
+- **What it takes:**
+  1. **BE** — add `venue_id` (owner-derived) to `CouponEntity` + migration; owner endpoints `POST/PUT/GET /api/v1/owner/venues/{venueId}/coupons` with the same ownership guards as venues/courts; include the venue's active offer in the venue summary DTO.
+  2. **FE owner** — an "Offers" screen under the venue to create/list/toggle coupons.
+  3. **FE player** — render the active-offer badge on the venue card in `PlayerHomeScreen` + venue detail.
+  4. **Policy** — decide whether admin keeps platform-wide promos (`AD-10`) or coupons become owner-only.
+- **Note:** Supersedes the generic player Offers tab (`PL-19`) and the admin-only model (`AD-10`).
+
+### 🟡 Improvements (open)
+
+#### F3 · Lock CORS to known hosts  — `B-11` · Priority **High** · Effort **S**
+- **Current:** `CorsConfig` uses `allowedOriginPatterns("*")` (+ all methods/headers, `credentials:false`, `maxAge 3600`).
+- **Risk:** Low–Med for a token-in-header API (no cookies), but permissive origins are poor prod hygiene.
+- **Fix:** Replace `"*"` with explicit app/web origins for prod (env-driven); keep `"*"` only for local dev.
+
+#### F4 · Remove the `__DEV__` API-URL banner  — `B-14` · Priority **High** · Effort **S (trivial)**
+- **Current:** `LoginScreen.tsx:118` renders `API: {BASE_URL}` under `__DEV__` (already stripped from release builds).
+- **Risk:** Low — informational only, never ships to users.
+- **Fix:** Delete the one line for cleanliness.
+
+#### F5 · Android release signing / prod SHA-1  — `D-05` · Priority **High** · Effort **S–M**
+- **Current:** Debug keystore only *(inferred)*; no production signing config / SHA-1 fingerprint.
+- **Why:** Required to publish a release build **and** to register Google Sign-In (F1).
+- **Fix:** Create a release keystore, wire it into `eas.json`/Gradle, register the SHA-1 in the Google console.
+
+#### F6 · Admin-action audit logging  — `B-13` · Priority **Med** · Effort **M**
+- **Current:** No dedicated audit trail; only implicit `updated_at` / `deleted_*` timestamps.
+- **Why:** Accountability/compliance for sensitive actions (ban, delete, role change, settings, payout).
+- **Fix:** An `admin_audit_log` table + a small service/aspect that records actor, action, target, before/after, and timestamp on those service methods.
+
+#### F7 · Custom fonts + full dark-mode theme  — `D-09` · Priority **Low** · Effort **M**
+- **Current:** System fonts only (no `expo-font`); theme is light-only; dark variants exist just in `planMeta`.
+- **Why:** Brand polish + user preference; not functional.
+- **Fix:** Load brand fonts via `expo-font`; add a dark token set to `theme/` and switch on `useColorScheme()`.
+
+#### F8 · Rate-limiter durability (Redis)  — `B-12` · Priority **Low** · **Accepted / deferred**
+- **Current:** In-memory `ConcurrentHashMap` limiters (auth flows + the new write limiter), per-instance, reset on restart.
+- **Decision:** **Sufficient at current scale** — 2 admins / 50 owners / 500 players on a **single instance**. A restart just grants a fresh allowance (harmless).
+- **Revisit when:** scaling to **2+ backend instances** (per-instance maps would let the cap leak). Then move counters to Redis/DB (or `bucket4j`). No code change needed before then.
 
 ---
 
@@ -172,13 +238,13 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 - **Code ref:** `EmailChangeScreen.tsx` → `GET/POST /api/v1/users/email-change/{status,request,verify}`.
 - **Notes:** —
 
-#### [PL-16] Change phone — 🟡
+#### [PL-16] Change phone — ✅
 - **Precondition:** Logged in.
-- **Steps:** Phone-change screen → request OTP → verify.
-- **Expected result:** Phone updated after OTP.
-- **Negative cases:** Profile `PUT` intentionally ignores phone, forcing the OTP flow.
-- **Code ref:** `PhoneChangeScreen.tsx` → `/api/v1/users/phone-change/*` (frontend hook not fully wired — *(inferred)*).
-- **Notes:** Flow partially wired; verify endpoints exist before release.
+- **Steps:** Phone-change screen → request OTP (emailed) → verify.
+- **Expected result:** Phone updated after OTP; `phone` + `active_phone` + `phoneVerified` set.
+- **Negative cases:** Profile `PUT` intentionally ignores phone, forcing the OTP flow; new phone already on an active account → 409 (`existsByActivePhone`) at both request and verify; wrong/expired OTP → rejected.
+- **Code ref:** `PhoneChangeScreen.tsx` + `usePhoneChange.ts` → `POST /api/v1/users/me/phone-change-requests`, `/verify`, `GET …/me`; `PhoneChangeController` + `PhoneChangeServiceImpl` (OTP SHA-256, expiry, uniqueness).
+- **Notes:** Verified fully wired end-to-end (FE paths match BE). Earlier 🟡 was a false flag from the initial scan.
 
 #### [PL-17] Delete account — ✅
 - **Precondition:** Logged in; password re-auth.
@@ -294,13 +360,13 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 - **Code ref:** `CouponEntity` has **no venue/owner field**; no owner coupon endpoint; only admin `POST /api/v1/admin/coupons` + global `CouponServiceImpl.createCoupon()`.
 - **Notes:** Primary product gap — needs venue/owner FK on coupons, an owner create/manage endpoint + screen, and venue-card surfacing on `PlayerHomeScreen`.
 
-#### [OW-13] Earnings / payouts — 🟡
+#### [OW-13] Earnings / payouts — ✅
 - **Precondition:** Owner.
 - **Steps:** Earnings screen.
 - **Expected result:** Payout history + revenue stats.
-- **Negative cases:** —
-- **Code ref:** `OwnerScreens.tsx` `EarningsScreen` → `GET /api/v1/owner/payouts`, `/api/v1/owner/stats` *(inferred — confirm endpoints/DTOs)*.
-- **Notes:** Verify wiring; payout processing exists on the admin side (`/api/v1/admin/payouts`).
+- **Negative cases:** Owner-scoped — both endpoints key off `principal.getId()`, so one owner can't read another's payouts/stats.
+- **Code ref:** `EarningsScreen` (`useOwnerPayouts`, `useOwnerStats`) → `GET /api/v1/owner/payouts` (`PayoutController.listOwnerPayouts`), `GET /api/v1/owner/stats` (`VenueController.getOwnerStats`).
+- **Notes:** Verified endpoints exist, are implemented, and owner-scoped. Earlier 🟡 (inferred) was a false flag.
 
 ### Admin
 
@@ -492,7 +558,7 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 |---|---|---|---|---|---|
 | B-01 | **JWT validation / expiry** | ✅ | — | `JwtTokenProvider.validateToken` (expiry + signature); `JwtAuthenticationFilter` checks `tokenVersion` vs DB | — |
 | B-02 | **Token storage** | ✅ | — | `tokenStorage.ts` uses `expo-secure-store` on native; `localStorage` only on web (dev) | Keep native SecureStore; never ship web build as prod client |
-| B-03 | **Refresh token rotation** | 🟡 | Med | `AuthServiceImpl.refreshToken` sets `refreshToken == token` (same JWT, no rotation) | Issue a distinct, rotating refresh token with its own expiry + revocation list |
+| B-03 | **Refresh token rotation** | ✅ | — | Access vs refresh tokens are now distinct + typed (`type` claim, 30-day refresh TTL). `/auth/refresh` rejects access tokens, enforces `tokenVersion`, and rotates a new access+refresh pair each call; `JwtAuthenticationFilter` refuses refresh tokens for API auth (`JwtTokenProvider`, `AuthServiceImpl.issueTokens/refreshToken`) | Done. Future hardening: persisted refresh-token store for reuse-detection (ties to B-12) |
 | B-04 | **RBAC / authZ** | ✅ | — | Class-level `@PreAuthorize("hasRole(...)")` on controllers + service-layer checks; method security enabled in `SecurityConfig` | — |
 | B-05 | **IDOR / object ownership** | ✅ | — | `VenueServiceImpl` owner-id checks (submit L508, court create L851 / update L865); booking ownership in `BookingServiceImpl`; subscription ownership in service | Keep pattern on every new owner-scoped endpoint |
 | B-06 | **SQL/JPA injection** | ✅ | — | `@Query` with `@Param` placeholders (`UserRepository`, `BookingRepository`); no string concatenation found | — |
@@ -501,11 +567,11 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 | B-09 | **Soft-delete leakage** | ✅ | — | On delete, `active_email`/`active_phone` set NULL; uniqueness on active fields (`existsByActiveEmail`); original `email` retained for audit only | Confirm list/search queries filter `status != DELETED` |
 | B-10 | **OTP / login rate limiting** | ✅ | — | OTP: 6-digit SHA-256, 10-min expiry, 45 s cooldown, 5/hr, 5-attempt cap; login lock 5/15 min; change-pw 10/hr → 429 (`AuthServiceImpl`) | — |
 | B-11 | **CORS** | 🟡 | Med | `CorsConfig` `allowedOrigins: "*"`, all methods/headers, `credentials:false`, `maxAge 3600` | Restrict origins to known app hosts for prod |
-| B-12 | **Rate-limiter durability** | 🟡 | Med | Login/OTP/change-pw counters are in-memory `ConcurrentHashMap` — reset on restart, not shared across instances | Move to Redis/DB for multi-instance correctness |
+| B-12 | **Rate-limiter durability** | 🟡 (accepted) | Low | Login/OTP/change-pw **and the new write limiter (B-16)** use in-memory `ConcurrentHashMap` — reset on restart, not shared across instances | **Deliberately deferred.** At current scale (2 admins / 50 owners / 500 players on a **single instance**) in-memory counters are correct and sufficient; a restart just grants a fresh allowance (harmless). Move to Redis/DB **only before horizontal scaling to 2+ instances**, where per-instance maps would let the cap leak |
 | B-13 | **Audit logging** | 🟡 | Med | No dedicated admin-action audit table; only implicit timestamps | Add structured audit log for ban/delete/role/settings changes |
 | B-14 | **Debug banner (client)** | 🟡 | Low | `LoginScreen.tsx:118` renders `API: {BASE_URL}` under `__DEV__` (stripped in release, but present in source) | Remove the line outright |
 | B-15 | **Transport / secrets** | ✅ | — | Base URL via `EXPO_PUBLIC_API_URL`; Android cleartext gated by env in `app.json`; no server secrets in RN bundle | Enforce HTTPS-only base URL in prod config |
-| B-16 | **General API rate limiting** | 🟡 | Med | Only auth flows are throttled; booking/venue/court mutations have no per-user/IP limit | Add a lightweight rate-limit filter for mutating endpoints |
+| B-16 | **General API rate limiting** | ✅ | — | `RateLimitInterceptor` throttles POST/PUT/PATCH/DELETE per user/IP (120/min, 60s window) → 429; registered for `/api/v1/**` in `RateLimitConfig` | Done. Durability/multi-instance tracked under B-12 |
 
 **Strengths confirmed:** strong `tokenVersion` invalidation (password/email change, force-logout), super-admin-only ban/delete enforced in the service layer (not just annotations), parameterized queries throughout, role forced on register.
 
@@ -517,10 +583,10 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 |---|---|---|---|---|---|
 | C-01 | **Search debounce** | ✅ | `PlayerHomeScreen` `useDebounce(query, 400)` before query params | No per-keystroke fetch storms | — |
 | C-02 | **Query defaults** | ✅ | `queryClient.ts`: staleTime 30 s, `refetchOnWindowFocus:false`, smart `retry` via `classifyError`; `useSports` 10-min staleTime; infinite venues 15/page | Sensible caching, no auth/404 retries | — |
-| C-03 | **Duplicate `/venues` + `/sports`** | 🟡 | `useSports`/venue hooks called from multiple screens (`PlayerHomeScreen`, `VenueDetailScreen`); guest→login remount re-runs queries; distinct queryKeys don't dedupe | Repeated identical GETs (matches the observed repeated `/venues` + `/sports` in the network log) — mount/remount + key fragmentation | Share a single `useSports` key (already cached 10 min — good); hoist venue list state; avoid remount on guest→player transition; consider `select` to reuse one cache entry |
-| C-04 | **Slot cache staleness** | 🟡 | Slots `staleTime 30 s`, not invalidated on screen re-focus | User returning within 30 s sees stale availability | Invalidate slot query on screen focus, or drop to `staleTime: 0` for slots |
+| C-03 | **Duplicate `/venues` + `/sports`** | ✅ | `useVenues` + `useInfiniteVenues` now carry `staleTime: 60_000`, so remounts (tab switches, guest→player) reuse cache instead of refetching; `useSports` already 10-min | Cuts the repeated `/venues`/`/sports` GETs seen in the network log (mount/remount churn) | Done. Optional further dedupe via shared `select` if param-fragmented keys reappear |
+| C-04 | **Slot cache staleness** | ✅ | `SlotSelectionScreen` re-fetches slots on screen focus via `useFocusEffect` (skips initial mount) so returning from Booking Confirm shows live availability | Avoids booking against a stale 30s snapshot | Done |
 | C-05 | **CORS preflight** | ✅ | `maxAge 3600` caches OPTIONS for an hour | Minimizes preflight overhead | — |
-| C-06 | **Notification polling** | 🟡 | `useNotifications` 60 s + `useUnreadNotifications` 30 s background refetch | Battery/data drain vs. push already configured | Drive refresh from `expo-notifications` receipt; lengthen/disable poll when push works |
+| C-06 | **Notification polling** | ✅ | List poll lowered/aligned to 60s with `refetchIntervalInBackground:false`; unread badge poll aligned to 60s; optimistic mark-read patches keep it live | Halves background data/battery cost | Done. Push-driven refresh is a later enhancement |
 
 **N+1 / batching:** booking group actions use group endpoints (`/group/{groupId}/*`) rather than per-slot calls — good. No client-side N+1 loops observed.
 
@@ -531,13 +597,13 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 | # | Item | Status | Evidence | Note |
 |---|---|---|---|---|
 | D-01 | Safe-area root | ✅ | `App.tsx` `SafeAreaProvider`; admin screens use `react-native-safe-area-context` + `edges` | — |
-| D-02 | Mixed SafeAreaView API | 🟡 | Player/Owner screens use legacy RN `SafeAreaView`; admin uses safe-area-context | Unify on `react-native-safe-area-context` for consistent notch handling |
-| D-03 | Keyboard avoidance | 🟡 | Only `AdminRolesScreen` uses `KeyboardAvoidingView`; Login/Register/OTP rely on ScrollView | iOS keyboard may cover inputs on auth/forms — add `KeyboardAvoidingView` |
+| D-02 | Mixed SafeAreaView API | ✅ | 28 player/owner/auth screens migrated to `react-native-safe-area-context` `SafeAreaView` with `edges={['top']}` (codemod) — consistent notch handling on both platforms | Done. Visual spot-check on a physical Android device recommended |
+| D-03 | Keyboard avoidance | ✅ | `KeyboardAvoidingView` (iOS `padding`) wraps Login/Register/OTP/ForgotPassword inputs | Done |
 | D-04 | Google Sign-In (both platforms) | 🔴 | No dependency, no iOS URL scheme/Android SHA config, no backend OAuth | Implement end-to-end or drop from scope (see PL-04) |
 | D-05 | Android release signing | 🟡 | Debug keystore only; no prod SHA-1 *(inferred from `android/app/build.gradle`)* | Configure release keystore + SHA-1 (also needed for Google) |
 | D-06 | OTP autofill | ✅ | `OTPVerificationScreen` `textContentType="oneTimeCode"` (iOS) + `autoComplete="sms-otp"` (Android) | Both platforms |
 | D-07 | Permissions | ✅ | Location `LocationContext` (`requestForegroundPermissionsAsync`); push `registerPush.ts`; `app.json` declares location/notifications/media | — |
-| D-08 | Android hardware back | 🟡 | No `BackHandler` usage found | Relies on RN-nav defaults; add explicit handling for modals/forms |
+| D-08 | Android hardware back | ✅ | New `useAndroidBack` hook (`src/hooks/useAndroidBack.ts`); ForgotPassword steps back through its flow on hardware-back instead of leaving the screen | Done. Apply the hook to other multi-step/modal screens as needed |
 | D-09 | Fonts & theme / dark mode | 🟡 | No `expo-font`; theme light-only; dark mode only in `planMeta` | Add font loading + full dark theme if required |
 | D-10 | Date/time (Asia/Kolkata) | ✅ | `dateUtils.ts` hardcodes `timeZone: 'Asia/Kolkata'` (+ normalizes 9-digit fractional seconds) | — |
 | D-11 | Splash / icon / scheme | ✅ | `app.json`: splash, icon, scheme `scoreadda`, portrait, bundle/package `com.scoreadda.app` | — |
