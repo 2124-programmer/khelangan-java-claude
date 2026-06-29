@@ -313,6 +313,9 @@ public class AuthServiceImpl implements AuthService {
                 user.getId(), user.getRole().name(), user.getTokenVersion()));
         response.setRefreshToken(tokenProvider.generateRefreshToken(
                 user.getId(), user.getRole().name(), user.getTokenVersion()));
+        // Forced first-login password change signal (e.g. bootstrap-seeded super-admin). The client
+        // routes to the change-password screen; the server also blocks other endpoints until cleared.
+        response.setMustChangePassword(user.isMustChangePassword());
     }
 
     // ── Change password (authenticated) ──────────────────────────────────────
@@ -338,9 +341,12 @@ public class AuthServiceImpl implements AuthService {
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         user.setTokenVersion(user.getTokenVersion() + 1);
+        // Clear the forced-change flag: a successful change satisfies the first-login requirement.
+        user.setMustChangePassword(false);
         userRepository.save(user);
 
-        // Issue a fresh access + refresh pair for the current device
+        // Issue a fresh access + refresh pair for the current device (old JWT is now invalidated
+        // by the tokenVersion bump above, so the client must use these new tokens).
         AuthResponse response = new AuthResponse();
         issueTokens(response, user);
         response.setUser(userMapper.toDto(user));
