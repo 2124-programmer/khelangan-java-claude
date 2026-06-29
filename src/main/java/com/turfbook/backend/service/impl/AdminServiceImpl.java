@@ -3,6 +3,7 @@ package com.turfbook.backend.service.impl;
 import com.turfbook.backend.dto.AdminStatsDto;
 import com.turfbook.backend.dto.PlatformSettingsDto;
 import com.turfbook.backend.dto.UpdateSettingsRequest;
+import com.turfbook.backend.entity.AdminAuditEntity;
 import com.turfbook.backend.entity.BookingEntity;
 import com.turfbook.backend.entity.DisputeEntity;
 import com.turfbook.backend.entity.PlatformSettingsEntity;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -32,6 +34,7 @@ public class AdminServiceImpl implements AdminService {
     private final DisputeRepository disputeRepository;
     private final PlatformSettingsRepository settingsRepository;
     private final AdminPermissionService adminPermissionService;
+    private final AdminAuditRepository auditRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -80,19 +83,56 @@ public class AdminServiceImpl implements AdminService {
     @Transactional
     public PlatformSettingsDto updateSettings(UpdateSettingsRequest request) {
         log.info("AdminService.updateSettings() called");
-        adminPermissionService.requireSuperAdmin(adminPermissionService.currentActorId()); // SUPER_ADMIN only
+        Long actorId = adminPermissionService.currentActorId();
+        adminPermissionService.requireSuperAdmin(actorId); // SUPER_ADMIN only
         PlatformSettingsEntity settings = settingsRepository.findById(1L)
                 .orElseGet(this::createDefaultSettings);
 
-        if (request.getCommissionPercent() != null) settings.setCommissionPercent(request.getCommissionPercent());
-        if (request.getConvenienceFee() != null) settings.setConvenienceFee(request.getConvenienceFee());
-        if (request.getMaintenanceMode() != null) settings.setMaintenanceMode(request.getMaintenanceMode());
-        if (request.getAutoApproveVenues() != null) settings.setAutoApproveVenues(request.getAutoApproveVenues());
+        // Capture before-values so the audit trail records what actually changed.
+        List<String> changes = new ArrayList<>();
+        if (request.getCommissionPercent() != null
+                && request.getCommissionPercent() != settings.getCommissionPercent()) {
+            changes.add("commission% " + settings.getCommissionPercent() + "→" + request.getCommissionPercent());
+            settings.setCommissionPercent(request.getCommissionPercent());
+        }
+        if (request.getConvenienceFee() != null
+                && request.getConvenienceFee() != settings.getConvenienceFee()) {
+            changes.add("convenienceFee " + settings.getConvenienceFee() + "→" + request.getConvenienceFee());
+            settings.setConvenienceFee(request.getConvenienceFee());
+        }
+        if (request.getMaintenanceMode() != null
+                && request.getMaintenanceMode() != settings.isMaintenanceMode()) {
+            changes.add("maintenanceMode " + settings.isMaintenanceMode() + "→" + request.getMaintenanceMode());
+            settings.setMaintenanceMode(request.getMaintenanceMode());
+        }
+        if (request.getAutoApproveVenues() != null
+                && request.getAutoApproveVenues() != settings.isAutoApproveVenues()) {
+            changes.add("autoApproveVenues " + settings.isAutoApproveVenues() + "→" + request.getAutoApproveVenues());
+            settings.setAutoApproveVenues(request.getAutoApproveVenues());
+        }
 
         PlatformSettingsDto result = toDto(settingsRepository.save(settings));
+        auditSettingsChange(actorId, changes);
         log.info("AdminService.updateSettings() completed - commissionPercent={}, convenienceFee={}",
                 settings.getCommissionPercent(), settings.getConvenienceFee());
         return result;
+    }
+
+    /**
+     * Record a platform-settings change in the admin audit trail. Settings have no target user,
+     * so the action is self-referenced to the acting super-admin (keeps the NOT-NULL target while
+     * still recording who changed what). The changed fields (old→new) go in metadata.
+     */
+    private void auditSettingsChange(Long actorId, List<String> changes) {
+        if (changes.isEmpty()) return; // no-op update — nothing worth recording
+        UserEntity actor = actorId != null ? userRepository.findById(actorId).orElse(null) : null;
+        if (actor == null) return; // can't satisfy the non-null target without the actor
+        String metadata = String.join(", ", changes);
+        if (metadata.length() > 500) metadata = metadata.substring(0, 500); // column cap
+        auditRepository.save(AdminAuditEntity.builder()
+                .actor(actor).target(actor)
+                .action("SETTINGS_UPDATE").metadata(metadata)
+                .build());
     }
 
     private PlatformSettingsEntity createDefaultSettings() {

@@ -70,6 +70,10 @@ app:
   upload:
     dir: ${UPLOAD_DIR:uploads}
   base-url: ${BASE_URL:http://localhost:8080}
+  cors:
+    # Comma-separated allowed web origins; "*" for local dev. Override per environment.
+    # Native mobile sends no Origin header, so this only affects browser clients.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
   otp:
     # DEV ONLY: when true, generated OTP codes are written to the log so you can test the
     # reset flow without opening the inbox. Keep false in any shared/prod environment.

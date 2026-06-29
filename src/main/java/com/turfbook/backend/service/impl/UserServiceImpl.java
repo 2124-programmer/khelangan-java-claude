@@ -11,6 +11,7 @@ import com.turfbook.backend.dto.SetAdminRoleRequest;
 import com.turfbook.backend.dto.UpdateProfileRequest;
 import com.turfbook.backend.dto.UserDto;
 import com.turfbook.backend.dto.UserPage;
+import com.turfbook.backend.entity.AdminAuditEntity;
 import com.turfbook.backend.entity.BookingEntity;
 import com.turfbook.backend.entity.NotificationEntity;
 import com.turfbook.backend.entity.SlotEntity;
@@ -19,6 +20,7 @@ import com.turfbook.backend.exception.ConflictException;
 import com.turfbook.backend.exception.ResourceNotFoundException;
 import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.UserMapper;
+import com.turfbook.backend.repository.AdminAuditRepository;
 import com.turfbook.backend.repository.BookingRepository;
 import com.turfbook.backend.repository.SlotRepository;
 import com.turfbook.backend.repository.UserRepository;
@@ -53,6 +55,7 @@ public class UserServiceImpl implements UserService {
     private final SlotRepository slotRepository;
     private final NotificationService notificationService;
     private final AdminPermissionService adminPermissionService;
+    private final AdminAuditRepository auditRepository;
 
     /** Statuses considered "upcoming" when cancelling a closing player's bookings. */
     private static final List<BookingEntity.BookingStatus> UPCOMING_STATUSES =
@@ -274,9 +277,12 @@ public class UserServiceImpl implements UserService {
         if (target.getRole() != UserEntity.Role.ADMIN) {
             throw new com.turfbook.backend.exception.ConflictException("Admin sub-roles apply only to ADMIN users.");
         }
+        UserEntity.AdminRole previous = target.getAdminRole();
         target.setAdminRole(role);
         target.setTokenVersion(target.getTokenVersion() + 1); // re-issue so the new role takes effect
         userRepository.save(target);
+        audit(actorId, target, "ADMIN_ROLE_CHANGE", null,
+                previous != null ? previous.name() : null, role.name());
         log.info("UserService.setAdminRole() - actor={} set user={} adminRole={}", actorId, targetUserId, role);
         MessageResponse response = new MessageResponse();
         response.setMessage("Admin role updated to " + role.name() + ".");
@@ -320,6 +326,7 @@ public class UserServiceImpl implements UserService {
                 .build();
         admin = userRepository.save(admin);
         sendAdminWelcomeNotification(admin, role);
+        audit(actorId, admin, "ADMIN_CREATE", null, null, role.name());
 
         log.info("UserService.createAdmin() - actor={} created admin={} adminRole={}", actorId, admin.getId(), role);
         return toAdminSummary(admin, actorId);
@@ -357,11 +364,13 @@ public class UserServiceImpl implements UserService {
             throw new ConflictException("That user is already an admin.");
         }
 
+        UserEntity.Role priorRole = target.getRole();
         target.setRole(UserEntity.Role.ADMIN);
         target.setAdminRole(role);
         target.setTokenVersion(target.getTokenVersion() + 1); // re-issue so the new role takes effect
         userRepository.save(target);
         sendAdminWelcomeNotification(target, role);
+        audit(actorId, target, "ADMIN_PROMOTE", null, priorRole.name(), "ADMIN:" + role.name());
 
         log.info("UserService.promoteToAdmin() - actor={} promoted user={} adminRole={}", actorId, target.getId(), role);
         return toAdminSummary(target, actorId);
@@ -380,6 +389,7 @@ public class UserServiceImpl implements UserService {
             throw new ConflictException("That user is not an admin.");
         }
 
+        String prevAdminRole = target.getAdminRole() != null ? target.getAdminRole().name() : null;
         String normalized = mode == null ? "demote" : mode.trim().toLowerCase();
         MessageResponse response = new MessageResponse();
         if ("deactivate".equals(normalized)) {
@@ -393,6 +403,8 @@ public class UserServiceImpl implements UserService {
             target.setDeletedBy(actorId);
             target.setDeletedReason("Admin account deactivated by super-admin.");
             userRepository.save(target);
+            audit(actorId, target, "ADMIN_DEACTIVATE", "Admin account deactivated by super-admin.",
+                    prevAdminRole, "DELETED");
             log.info("UserService.removeAdmin() - actor={} deactivated admin={}", actorId, targetUserId);
             response.setMessage("Admin account deactivated.");
         } else if ("demote".equals(normalized)) {
@@ -401,6 +413,7 @@ public class UserServiceImpl implements UserService {
             target.setAdminRole(null);
             target.setTokenVersion(target.getTokenVersion() + 1);
             userRepository.save(target);
+            audit(actorId, target, "ADMIN_DEMOTE", null, prevAdminRole, "PLAYER");
             log.info("UserService.removeAdmin() - actor={} demoted admin={} to player", actorId, targetUserId);
             response.setMessage("Admin access revoked. The account is now a regular user.");
         } else {
@@ -415,5 +428,17 @@ public class UserServiceImpl implements UserService {
     public UserEntity getEntityById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", id));
+    }
+
+    /**
+     * Append a row to the admin audit trail for a sensitive admin-account action
+     * (create / promote / role-change / removal). Mirrors the moderation audit in
+     * AdminPlayerServiceImpl/AdminOwnerServiceImpl so all admin actions land in one table.
+     */
+    private void audit(Long actorId, UserEntity target, String action, String reason, String from, String to) {
+        UserEntity actor = actorId != null ? userRepository.findById(actorId).orElse(null) : null;
+        auditRepository.save(AdminAuditEntity.builder()
+                .actor(actor).target(target).action(action).reason(reason)
+                .fromStatus(from).toStatus(to).build());
     }
 }

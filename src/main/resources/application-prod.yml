@@ -13,7 +13,7 @@
 #    JWT_SECRET   (>= 256-bit / 32+ random chars)
 #    BASE_URL     (public https origin, e.g. https://api.score-adda.com)
 #    UPLOAD_DIR   (absolute path on a persistent volume)
-#  Optional: PORT, *_LOG_LEVEL
+#  Optional: PORT, *_LOG_LEVEL, CORS_ALLOWED_ORIGINS (web origins; defaults to "*")
 # ============================================================================
 spring:
   datasource:
@@ -89,6 +89,10 @@ app:
   upload:
     dir: ${UPLOAD_DIR}
   base-url: ${BASE_URL}
+  cors:
+    # Lock to the real web origin(s) in prod, e.g. "https://admin.score-adda.com".
+    # Defaults to "*" only if unset — set CORS_ALLOWED_ORIGINS to restrict browser clients.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
   otp:
     # Never log OTP codes in production.
     debug-log-codes: false

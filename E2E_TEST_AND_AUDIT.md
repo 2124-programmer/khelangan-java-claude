@@ -30,7 +30,11 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 | 🟡 D-08 | Android hardware-back | `useAndroidBack` hook + ForgotPassword steps back on hardware back. |
 | 🟡 PL-16 | Change-phone flow | Already complete end-to-end (`PhoneChangeController` + `usePhoneChange`); earlier 🟡 was a false flag. |
 | 🟡 OW-13 | Owner earnings/payouts | Endpoints exist & owner-scoped (`PayoutController.listOwnerPayouts`, `VenueController.getOwnerStats`); earlier 🟡 was a false flag. |
-| 🟡 D-09 | Fonts + full dark mode | **Inter** bundled & applied app-wide (global Text/TextInput weight→family patch) for identical iOS/Android/web type; **full dark theme** via light/dark palettes resolved from the OS scheme at launch. Verified: tsc 0, Metro export OK. |
+| 🟡 D-09 | Fonts + full dark mode | **Inter** bundled & applied app-wide (global Text/TextInput weight→family patch) for identical iOS/Android/web type; **full dark theme** via light/dark palettes resolved from the OS scheme at launch. Verified: tsc 0, Metro export OK. Follow-up: in-app Light/Dark/System toggle (reload-based) + web persistence fix (localStorage) + `userInterfaceStyle:"automatic"` so System detects device dark. |
+| 🟡 B-14 | Debug API banner (Login) | Removed the `__DEV__` banner JSX, unused `BASE_URL` import, and `debugBanner` style. tsc clean. |
+| 🟡 B-11 | CORS lockable for prod | `CorsConfig` now env-driven via `app.cors.allowed-origins` (`${CORS_ALLOWED_ORIGINS:*}`): explicit list locks origins, `*`/blank stays permissive for dev + native. `mvn compile` SUCCESS. |
+| 🟡 B-13 | Admin-action audit logging | Extended the existing `admin_audit` trail to admin create/promote/role-change/remove (`UserServiceImpl`) and platform-settings updates (`AdminServiceImpl`, before→after in metadata). `mvn compile` SUCCESS. |
+| 🟡→deferred D-05 | Android release signing | `build.gradle` release signing wired to Gradle-prop/env credentials (debug fallback); keystores gitignored; runbook `docs/RELEASE_SIGNING.md`. **Deferred ("coming soon")**: create keystore + register SHA-1 when release/Google Sign-In is scheduled. |
 
 ### Prioritized action list — remaining (High → Low)
 
@@ -39,9 +43,9 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 |---|---|---|---|
 | 1 | Google Sign-In — listed as an auth method but unbuilt on both sides | 🔴 | PL-04 / D-04 |
 | 2 | Owner-authored venue coupons shown on the player home venue card (today only global admin coupons exist) | 🔴 | OW-12 / PL-19 / AD-10 |
-| 3 | CORS `allowedOrigins: "*"` → restrict to known hosts for prod | 🟡 | B-11 |
-| 4 | Remove `__DEV__` API-URL banner on Login (low effort) | 🟡 | B-14 |
-| 5 | Android release signing / prod SHA-1 (blocks release + Google) | 🟡 | D-05 |
+| 3 | CORS `allowedOrigins: "*"` → restrict to known hosts for prod | ✅ | B-11 (resolved — env-driven) |
+| 4 | Remove `__DEV__` API-URL banner on Login (low effort) | ✅ | B-14 (resolved) |
+| 5 | Android release signing / prod SHA-1 (blocks release + Google). **Deferred — "coming soon"** (scaffolding in place; keystore + SHA-1 to be done when release/Google Sign-In is scheduled) | 🟡 (deferred) | D-05 |
 
 **Medium**
 | # | Item | Status | Where |
@@ -51,7 +55,7 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 **Low**
 | # | Item | Status | Where |
 |---|---|---|---|
-| 7 | Admin-action audit logging | 🟡 | B-13 |
+| 7 | Admin-action audit logging | ✅ | B-13 (resolved — now covers settings + admin-role changes) |
 
 ---
 
@@ -82,25 +86,29 @@ What exists today, why it matters, and what implementing it takes. Grouped 🔴 
 
 ### 🟡 Improvements (open)
 
-#### F3 · Lock CORS to known hosts  — `B-11` · Priority **High** · Effort **S**
-- **Current:** `CorsConfig` uses `allowedOriginPatterns("*")` (+ all methods/headers, `credentials:false`, `maxAge 3600`).
-- **Risk:** Low–Med for a token-in-header API (no cookies), but permissive origins are poor prod hygiene.
-- **Fix:** Replace `"*"` with explicit app/web origins for prod (env-driven); keep `"*"` only for local dev.
+#### F3 · Lock CORS to known hosts  — `B-11` · Priority **High** · Effort **S** · ✅ **Resolved**
+- **Was:** `CorsConfig` hardcoded `allowedOriginPatterns("*")`.
+- **Done:** `CorsConfig` now reads `app.cors.allowed-origins` (`@Value`, default `*`), comma-split into a list:
+  blank/`*` → permissive (covers dev + native mobile, which sends no Origin) and logs a warning; an
+  explicit list → CORS locked to exactly those origins (logged at startup). Property added to
+  `application.yml` + `application-prod.yml` as `${CORS_ALLOWED_ORIGINS:*}`. Methods/headers/`credentials:false`/`maxAge` unchanged. `mvn compile` SUCCESS.
+- **To activate in prod:** set `CORS_ALLOWED_ORIGINS=https://admin.score-adda.com,...` in the prod env.
 
-#### F4 · Remove the `__DEV__` API-URL banner  — `B-14` · Priority **High** · Effort **S (trivial)**
-- **Current:** `LoginScreen.tsx:118` renders `API: {BASE_URL}` under `__DEV__` (already stripped from release builds).
-- **Risk:** Low — informational only, never ships to users.
-- **Fix:** Delete the one line for cleanliness.
+#### F4 · Remove the `__DEV__` API-URL banner  — `B-14` · Priority **High** · Effort **S (trivial)** · ✅ **Resolved**
+- **Was:** `LoginScreen.tsx` rendered `API: {BASE_URL}` under `__DEV__` (already stripped from release builds).
+- **Done:** Removed the banner JSX, the now-unused `BASE_URL` import, and the orphaned `debugBanner` style. `tsc` clean.
 
-#### F5 · Android release signing / prod SHA-1  — `D-05` · Priority **High** · Effort **S–M**
-- **Current:** Debug keystore only *(inferred)*; no production signing config / SHA-1 fingerprint.
-- **Why:** Required to publish a release build **and** to register Google Sign-In (F1).
-- **Fix:** Create a release keystore, wire it into `eas.json`/Gradle, register the SHA-1 in the Google console.
+#### F5 · Android release signing / prod SHA-1  — `D-05` · Priority **High** · Effort **S–M** · 🟡 **Deferred — "coming soon"**
+- **Status:** Scaffolding is in place; the keystore creation + SHA-1 registration are **intentionally deferred** until release / Google Sign-In is scheduled. Nothing blocks current dev/internal builds.
+- **Done (code):** `android/app/build.gradle` `release` signingConfig reads `SCOREADDA_UPLOAD_STORE_FILE/_STORE_PASSWORD/_KEY_ALIAS/_KEY_PASSWORD` from Gradle props/env (falls back to debug when absent — no secrets committed). `.gitignore` excludes `*.keystore`/`*.jks`/`gradle.properties`. Full runbook in `turfbook-claudeAI/docs/RELEASE_SIGNING.md`.
+- **When picked up (cannot be automated — secrets + external consoles):** create the upload keystore (`keytool` or `eas credentials`), provide the 4 credentials, register the **SHA-1** in Google Play Console + Google Cloud OAuth.
+- **Note:** `android/` is gitignored (regenerated by prebuild/EAS) → **EAS-managed credentials is the authoritative path**; the Gradle block only helps one-off local builds. See the doc.
 
-#### F6 · Admin-action audit logging  — `B-13` · Priority **Med** · Effort **M**
-- **Current:** No dedicated audit trail; only implicit `updated_at` / `deleted_*` timestamps.
-- **Why:** Accountability/compliance for sensitive actions (ban, delete, role change, settings, payout).
-- **Fix:** An `admin_audit_log` table + a small service/aspect that records actor, action, target, before/after, and timestamp on those service methods.
+#### F6 · Admin-action audit logging  — `B-13` · Priority **Med** · Effort **M** · ✅ **Resolved**
+- **Found:** The `admin_audit` table (`AdminAuditEntity`) + `AdminAuditRepository` + `audit()` helpers **already existed** and covered player/owner moderation (suspend/ban/unban/delete) in `AdminPlayerServiceImpl`/`AdminOwnerServiceImpl`.
+- **Done (closed the gaps):** extended the trail to the two uncovered sensitive areas —
+  - **Admin-account changes** (`UserServiceImpl`): `createAdmin` → `ADMIN_CREATE`, `promoteToAdmin` → `ADMIN_PROMOTE`, `setAdminRole` → `ADMIN_ROLE_CHANGE` (from→to role), `removeAdmin` → `ADMIN_DEACTIVATE`/`ADMIN_DEMOTE`; target = the affected admin.
+  - **Platform settings** (`AdminServiceImpl.updateSettings`): `SETTINGS_UPDATE` with before→after of each changed field in `metadata`; self-referenced to the acting super-admin (settings have no user target, and the existing `target_user_id` column is NOT NULL — no schema change needed). `mvn compile` SUCCESS.
 
 #### F7 · Custom fonts + full dark-mode theme  — `D-09` · ✅ **Done**
 - **Fonts:** **Inter** bundled (`@expo-google-fonts/inter` + `expo-font`, SDK-51-pinned), loaded in `App.tsx` via `useFonts`, and applied app-wide by a global `Text`/`TextInput` render patch (`src/theme/applyFonts.ts`) that maps each element's `fontWeight` to the matching Inter family — so iOS, Android, and Chrome render the **same** font at correct weights with **zero per-screen edits**.
@@ -568,10 +576,10 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 | B-08 | **Mass assignment** | ✅ | — | `register()` forces non-ADMIN role (`AuthServiceImpl` L106-114); `UpdateProfileRequest` has no role/plan/status/active fields | Keep DTOs minimal; never bind entities directly |
 | B-09 | **Soft-delete leakage** | ✅ | — | On delete, `active_email`/`active_phone` set NULL; uniqueness on active fields (`existsByActiveEmail`); original `email` retained for audit only | Confirm list/search queries filter `status != DELETED` |
 | B-10 | **OTP / login rate limiting** | ✅ | — | OTP: 6-digit SHA-256, 10-min expiry, 45 s cooldown, 5/hr, 5-attempt cap; login lock 5/15 min; change-pw 10/hr → 429 (`AuthServiceImpl`) | — |
-| B-11 | **CORS** | 🟡 | Med | `CorsConfig` `allowedOrigins: "*"`, all methods/headers, `credentials:false`, `maxAge 3600` | Restrict origins to known app hosts for prod |
+| B-11 | **CORS** | ✅ | Med | Env-driven: `CorsConfig` reads `app.cors.allowed-origins` (`${CORS_ALLOWED_ORIGINS:*}`) — explicit list locks origins, `*`/blank stays permissive for dev + native (no Origin header) | Done — set `CORS_ALLOWED_ORIGINS` in prod to lock |
 | B-12 | **Rate-limiter durability** | 🟡 (accepted) | Low | Login/OTP/change-pw **and the new write limiter (B-16)** use in-memory `ConcurrentHashMap` — reset on restart, not shared across instances | **Deliberately deferred.** At current scale (2 admins / 50 owners / 500 players on a **single instance**) in-memory counters are correct and sufficient; a restart just grants a fresh allowance (harmless). Move to Redis/DB **only before horizontal scaling to 2+ instances**, where per-instance maps would let the cap leak |
-| B-13 | **Audit logging** | 🟡 | Med | No dedicated admin-action audit table; only implicit timestamps | Add structured audit log for ban/delete/role/settings changes |
-| B-14 | **Debug banner (client)** | 🟡 | Low | `LoginScreen.tsx:118` renders `API: {BASE_URL}` under `__DEV__` (stripped in release, but present in source) | Remove the line outright |
+| B-13 | **Audit logging** | ✅ | Med | `admin_audit` table records actor/target/action/from→to/metadata/timestamp. Covers player+owner moderation, **and now** admin create/promote/role-change/remove + platform-settings updates | Done |
+| B-14 | **Debug banner (client)** | ✅ | Low | Removed — banner JSX, unused `BASE_URL` import, and `debugBanner` style all deleted from `LoginScreen.tsx` | Done |
 | B-15 | **Transport / secrets** | ✅ | — | Base URL via `EXPO_PUBLIC_API_URL`; Android cleartext gated by env in `app.json`; no server secrets in RN bundle | Enforce HTTPS-only base URL in prod config |
 | B-16 | **General API rate limiting** | ✅ | — | `RateLimitInterceptor` throttles POST/PUT/PATCH/DELETE per user/IP (120/min, 60s window) → 429; registered for `/api/v1/**` in `RateLimitConfig` | Done. Durability/multi-instance tracked under B-12 |
 
@@ -602,7 +610,7 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 | D-02 | Mixed SafeAreaView API | ✅ | 28 player/owner/auth screens migrated to `react-native-safe-area-context` `SafeAreaView` with `edges={['top']}` (codemod) — consistent notch handling on both platforms | Done. Visual spot-check on a physical Android device recommended |
 | D-03 | Keyboard avoidance | ✅ | `KeyboardAvoidingView` (iOS `padding`) wraps Login/Register/OTP/ForgotPassword inputs | Done |
 | D-04 | Google Sign-In (both platforms) | 🔴 | No dependency, no iOS URL scheme/Android SHA config, no backend OAuth | Implement end-to-end or drop from scope (see PL-04) |
-| D-05 | Android release signing | 🟡 | Debug keystore only; no prod SHA-1 *(inferred from `android/app/build.gradle`)* | Configure release keystore + SHA-1 (also needed for Google) |
+| D-05 | Android release signing | 🟡 (deferred — "coming soon") | `build.gradle` release signing now env/Gradle-prop driven (falls back to debug); `.gitignore` excludes keystores; runbook in `docs/RELEASE_SIGNING.md` | Deferred: create keystore + register SHA-1 (your secrets/consoles) when release/Google scheduled |
 | D-06 | OTP autofill | ✅ | `OTPVerificationScreen` `textContentType="oneTimeCode"` (iOS) + `autoComplete="sms-otp"` (Android) | Both platforms |
 | D-07 | Permissions | ✅ | Location `LocationContext` (`requestForegroundPermissionsAsync`); push `registerPush.ts`; `app.json` declares location/notifications/media | — |
 | D-08 | Android hardware back | ✅ | New `useAndroidBack` hook (`src/hooks/useAndroidBack.ts`); ForgotPassword steps back through its flow on hardware-back instead of leaving the screen | Done. Apply the hook to other multi-step/modal screens as needed |
