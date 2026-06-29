@@ -22,6 +22,8 @@ import org.springframework.stereotype.Service;
 public class MailServiceImpl implements MailService {
 
     private final JavaMailSender mailSender;
+    private final GmailApiMailSender gmailApiMailSender;
+    private final ResendMailSender resendMailSender;
 
     @Value("${spring.mail.username}")
     private String fromAddress;
@@ -39,9 +41,16 @@ public class MailServiceImpl implements MailService {
     /** One-line startup summary so you can confirm the env vars actually loaded (password never logged). */
     @PostConstruct
     void logMailConfig() {
-        log.info("Mail configured - host={}, port={}, from={}, passwordSet={}",
-                mailHost, mailPort, maskEmail(fromAddress),
+        log.info("Mail configured - transport={}, host={}, port={}, from={}, passwordSet={}",
+                activeTransport(), mailHost, mailPort, maskEmail(fromAddress),
                 mailPassword != null && !mailPassword.isBlank());
+    }
+
+    /** Pick order: Gmail API → Resend → SMTP. Gmail/Resend use HTTPS (work where SMTP is blocked). */
+    private String activeTransport() {
+        if (gmailApiMailSender.isEnabled()) return "GmailAPI(HTTPS)";
+        if (resendMailSender.isEnabled()) return "Resend(HTTPS)";
+        return "SMTP";
     }
 
     @Override
@@ -114,30 +123,48 @@ public class MailServiceImpl implements MailService {
                 + "</div>";
     }
 
-    /** Sends a text (+ optional HTML) message. Failures are swallowed after logging. */
+    /**
+     * Sends a text (+ optional HTML) message. Uses Resend's HTTPS API when configured (works on
+     * Railway, which blocks SMTP), otherwise raw SMTP (fine for local dev). Failures are swallowed
+     * after logging.
+     */
     private void send(String to, String subject, String text, String html) {
         long startedAt = System.currentTimeMillis();
-        log.info("Sending mail - to={}, subject='{}', html={}, host={}, port={}",
-                maskEmail(to), subject, html != null, mailHost, mailPort);
+        String transport = activeTransport();
+        log.info("Sending mail - to={}, subject='{}', html={}, transport={}",
+                maskEmail(to), subject, html != null, transport);
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, html != null, "UTF-8");
-            helper.setFrom(fromAddress);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            if (html != null) {
-                helper.setText(text, html); // multipart/alternative: plain + HTML
+            if (gmailApiMailSender.isEnabled()) {
+                gmailApiMailSender.send(to, subject, text, html);
+            } else if (resendMailSender.isEnabled()) {
+                resendMailSender.send(to, subject, text, html);
             } else {
-                helper.setText(text);
+                sendViaSmtp(to, subject, text, html);
             }
-            mailSender.send(message);
-            log.info("Mail sent - to={}, took={}ms", maskEmail(to), System.currentTimeMillis() - startedAt);
+            log.info("Mail sent - to={}, transport={}, took={}ms",
+                    maskEmail(to), transport, System.currentTimeMillis() - startedAt);
         } catch (Exception ex) {
-            // Full stack at error so SMTP/auth failures (e.g. 535 bad credentials, connection
-            // timeouts, STARTTLS issues) are diagnosable. Subject/recipient only — never the body/code.
-            log.error("Failed to send mail - to={}, subject='{}', error={}: {}",
-                    maskEmail(to), subject, ex.getClass().getSimpleName(), ex.getMessage(), ex);
+            // Full stack at error so transport failures (Gmail invalid_grant/scope, Resend
+            // unverified-domain/invalid-key, SMTP 535/timeouts) are diagnosable. Subject/recipient
+            // only — never the body/code.
+            log.error("Failed to send mail - to={}, subject='{}', transport={}, error={}: {}",
+                    maskEmail(to), subject, transport, ex.getClass().getSimpleName(), ex.getMessage(), ex);
         }
+    }
+
+    /** Raw SMTP transport (JavaMail) — the local-dev fallback when Resend isn't configured. */
+    private void sendViaSmtp(String to, String subject, String text, String html) throws Exception {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, html != null, "UTF-8");
+        helper.setFrom(fromAddress);
+        helper.setTo(to);
+        helper.setSubject(subject);
+        if (html != null) {
+            helper.setText(text, html); // multipart/alternative: plain + HTML
+        } else {
+            helper.setText(text);
+        }
+        mailSender.send(message);
     }
 
     private static String maskEmail(String email) {
