@@ -319,9 +319,25 @@ public class UserServiceImpl implements UserService {
                 .acceptedTermsAt(LocalDateTime.now())
                 .build();
         admin = userRepository.save(admin);
+        sendAdminWelcomeNotification(admin, role);
 
         log.info("UserService.createAdmin() - actor={} created admin={} adminRole={}", actorId, admin.getId(), role);
         return toAdminSummary(admin, actorId);
+    }
+
+    /** Seed a new/promoted admin's inbox so notifications are visible immediately and the pipeline is confirmed. */
+    private void sendAdminWelcomeNotification(UserEntity admin, UserEntity.AdminRole role) {
+        String roleLabel = switch (role) {
+            case SUPER_ADMIN -> "Super Admin";
+            case SUPPORT -> "Support";
+            case READ_ONLY -> "Read Only";
+        };
+        notificationService.createNotification(
+                admin,
+                "Welcome to the admin team",
+                "Your " + roleLabel + " admin access is active. Platform alerts — venue approvals, "
+                        + "disputes and subscription events — will appear here.",
+                NotificationEntity.NotificationType.SYSTEM);
     }
 
     @Override
@@ -345,6 +361,7 @@ public class UserServiceImpl implements UserService {
         target.setAdminRole(role);
         target.setTokenVersion(target.getTokenVersion() + 1); // re-issue so the new role takes effect
         userRepository.save(target);
+        sendAdminWelcomeNotification(target, role);
 
         log.info("UserService.promoteToAdmin() - actor={} promoted user={} adminRole={}", actorId, target.getId(), role);
         return toAdminSummary(target, actorId);

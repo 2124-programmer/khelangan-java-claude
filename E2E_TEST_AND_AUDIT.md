@@ -11,8 +11,8 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 | A. E2E cases (by role) | 50 | 2 | 2 |
 | B. Security | 12 | 4 | 0 |
 | C. API efficiency | 6 | 0 | 0 |
-| D. Cross-platform | 8 | 2 | 1 |
-| **Total** | **76** | **8** | **3** |
+| D. Cross-platform | 9 | 1 | 1 |
+| **Total** | **77** | **7** | **3** |
 
 > **Update (2026-06-28):** 10 audit items were implemented/resolved in this pass — see the
 > "Resolved this pass" list below. Counts above reflect the new state.
@@ -30,6 +30,7 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 | 🟡 D-08 | Android hardware-back | `useAndroidBack` hook + ForgotPassword steps back on hardware back. |
 | 🟡 PL-16 | Change-phone flow | Already complete end-to-end (`PhoneChangeController` + `usePhoneChange`); earlier 🟡 was a false flag. |
 | 🟡 OW-13 | Owner earnings/payouts | Endpoints exist & owner-scoped (`PayoutController.listOwnerPayouts`, `VenueController.getOwnerStats`); earlier 🟡 was a false flag. |
+| 🟡 D-09 | Fonts + full dark mode | **Inter** bundled & applied app-wide (global Text/TextInput weight→family patch) for identical iOS/Android/web type; **full dark theme** via light/dark palettes resolved from the OS scheme at launch. Verified: tsc 0, Metro export OK. |
 
 ### Prioritized action list — remaining (High → Low)
 
@@ -51,13 +52,12 @@ Score-Adda is an Expo React Native + TypeScript app (`turfbook-claudeAI`) on a S
 | # | Item | Status | Where |
 |---|---|---|---|
 | 7 | Admin-action audit logging | 🟡 | B-13 |
-| 8 | Custom fonts + full dark-mode theme | 🟡 | D-09 |
 
 ---
 
 ## Section F — Pending items (detailed)
 
-Everything still open after this pass — what exists today, why it matters, and what implementing it takes. Grouped 🔴 (build) then 🟡 (improve). **2 features + 6 improvements remain** (one of which, B-12, is an accepted/deferred decision). Effort key: S = hours, M = 1–3 days, L = ≥ a week.
+What exists today, why it matters, and what implementing it takes. Grouped 🔴 (build) then 🟡 (improve). **2 features + 5 improvements remain** (one of which, B-12, is an accepted/deferred decision); F7 below is now ✅ done. Effort key: S = hours, M = 1–3 days, L = ≥ a week.
 
 ### 🔴 To implement
 
@@ -102,10 +102,12 @@ Everything still open after this pass — what exists today, why it matters, and
 - **Why:** Accountability/compliance for sensitive actions (ban, delete, role change, settings, payout).
 - **Fix:** An `admin_audit_log` table + a small service/aspect that records actor, action, target, before/after, and timestamp on those service methods.
 
-#### F7 · Custom fonts + full dark-mode theme  — `D-09` · Priority **Low** · Effort **M**
-- **Current:** System fonts only (no `expo-font`); theme is light-only; dark variants exist just in `planMeta`.
-- **Why:** Brand polish + user preference; not functional.
-- **Fix:** Load brand fonts via `expo-font`; add a dark token set to `theme/` and switch on `useColorScheme()`.
+#### F7 · Custom fonts + full dark-mode theme  — `D-09` · ✅ **Done**
+- **Fonts:** **Inter** bundled (`@expo-google-fonts/inter` + `expo-font`, SDK-51-pinned), loaded in `App.tsx` via `useFonts`, and applied app-wide by a global `Text`/`TextInput` render patch (`src/theme/applyFonts.ts`) that maps each element's `fontWeight` to the matching Inter family — so iOS, Android, and Chrome render the **same** font at correct weights with **zero per-screen edits**.
+- **Dark mode:** light + dark palettes (same keys) in `src/theme/index.ts`; status bar theme-aware; non-adapting white backgrounds fixed.
+- **In-app toggle:** `AppearanceSelector` (System / Light / Dark) in player Settings, owner Settings, and Admin Profile. The choice persists (`store/themePreference`, secure-store), is loaded by a startup gate (`RootGate` + custom `index.js` entry) **before** the theme resolves, and is re-applied instantly by reloading the JS app (`expo-updates` on native, `location.reload` on web).
+- **Verified:** `tsc` 0 errors, `eslint` clean, **Metro `expo export` succeeds on Android + web** from the new entry (gate → lazy App), with all 4 Inter weights + `.ttf` assets bundled.
+- **Note:** repaint happens via a ~1s app reload on toggle (static styles can't live-swap); switching the device theme while on "System" applies on next launch.
 
 #### F8 · Rate-limiter durability (Redis)  — `B-12` · Priority **Low** · **Accepted / deferred**
 - **Current:** In-memory `ConcurrentHashMap` limiters (auth flows + the new write limiter), per-instance, reset on restart.
@@ -604,7 +606,7 @@ Server is the source of truth; client-side hiding is not security. Each item: st
 | D-06 | OTP autofill | ✅ | `OTPVerificationScreen` `textContentType="oneTimeCode"` (iOS) + `autoComplete="sms-otp"` (Android) | Both platforms |
 | D-07 | Permissions | ✅ | Location `LocationContext` (`requestForegroundPermissionsAsync`); push `registerPush.ts`; `app.json` declares location/notifications/media | — |
 | D-08 | Android hardware back | ✅ | New `useAndroidBack` hook (`src/hooks/useAndroidBack.ts`); ForgotPassword steps back through its flow on hardware-back instead of leaving the screen | Done. Apply the hook to other multi-step/modal screens as needed |
-| D-09 | Fonts & theme / dark mode | 🟡 | No `expo-font`; theme light-only; dark mode only in `planMeta` | Add font loading + full dark theme if required |
+| D-09 | Fonts & theme / dark mode | ✅ | **Inter** bundled (`@expo-google-fonts/inter` + `expo-font`), loaded via `useFonts`, applied app-wide via a global Text/TextInput weight→family patch (`src/theme/applyFonts.ts`) — same font on iOS/Android/web. **Full dark theme**: light/dark palettes in `src/theme/index.ts` (same keys). **In-app Light/Dark/System toggle** (`AppearanceSelector` in player/owner Settings + Admin Profile) persists the choice (`store/themePreference`), applied at launch via a startup gate (`RootGate`/`index.js`) and re-applied instantly by reloading the app (`expo-updates`) | Done. Device spot-check recommended |
 | D-10 | Date/time (Asia/Kolkata) | ✅ | `dateUtils.ts` hardcodes `timeZone: 'Asia/Kolkata'` (+ normalizes 9-digit fractional seconds) | — |
 | D-11 | Splash / icon / scheme | ✅ | `app.json`: splash, icon, scheme `scoreadda`, portrait, bundle/package `com.scoreadda.app` | — |
 

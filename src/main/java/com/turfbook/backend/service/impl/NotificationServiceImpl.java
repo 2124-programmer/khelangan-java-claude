@@ -148,7 +148,11 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public void notifyAdmins(String title, String body, NotificationEntity.NotificationType type) {
-        var admins = userRepository.findByRole(UserEntity.Role.ADMIN);
+        // Fan out to every ACTIVE admin regardless of sub-role (SUPER_ADMIN / SUPPORT / READ_ONLY);
+        // closed (DELETED) admin accounts are skipped.
+        var admins = userRepository.findByRole(UserEntity.Role.ADMIN).stream()
+                .filter(a -> a.getStatus() != UserEntity.AccountStatus.DELETED)
+                .toList();
         for (UserEntity admin : admins) {
             createNotification(admin, title, body, type);
         }
