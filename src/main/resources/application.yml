@@ -14,7 +14,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: false
+    show-sql: true
     open-in-view: false
     properties:
       hibernate:
@@ -78,6 +78,13 @@ app:
     # DEV ONLY: when true, generated OTP codes are written to the log so you can test the
     # reset flow without opening the inbox. Keep false in any shared/prod environment.
     debug-log-codes: ${OTP_DEBUG_LOG:false}
+  bootstrap:
+    admin:
+      # First-run SUPER_ADMIN bootstrap (see AdminSeeder). Set both env vars on the deploy host;
+      # the seeded admin is forced to change this password on first login. Leave unset once a
+      # super-admin exists — the seeder is idempotent and skips when one is present.
+      email: ${BOOTSTRAP_ADMIN_EMAIL:score.addda@gmail.com}
+      password: ${BOOTSTRAP_ADMIN_PASSWORD:Password@123}
 
 server:
   port: 8080

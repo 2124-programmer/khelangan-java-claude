@@ -146,6 +146,15 @@ public class UserEntity {
     @Builder.Default
     private int tokenVersion = 0;
 
+    /**
+     * When true, the user must change their password before accessing any other endpoint.
+     * Set on bootstrap-seeded super-admins (see AdminSeeder); cleared on the next successful
+     * change-password. Enforced server-side in JwtAuthenticationFilter. (ddl-auto adds this column.)
+     */
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private boolean mustChangePassword = false;
+
     // ── Soft-delete (terminal) ─────────────────────────────────────────────
     /** When the account was soft-deleted. Non-null ⇒ DELETED + read-only everywhere. */
     @Column(name = "deleted_at")
