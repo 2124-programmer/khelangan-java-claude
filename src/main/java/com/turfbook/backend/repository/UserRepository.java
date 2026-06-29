@@ -28,6 +28,9 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
     long countByRole(UserEntity.Role role);
 
+    /** Whether any admin of the given sub-role exists — used by the idempotent super-admin bootstrap. */
+    boolean existsByRoleAndAdminRole(UserEntity.Role role, UserEntity.AdminRole adminRole);
+
     /** All users of a role — used to fan a notification out to every admin. */
     java.util.List<UserEntity> findByRole(UserEntity.Role role);
 
