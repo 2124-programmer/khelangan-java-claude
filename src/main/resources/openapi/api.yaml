@@ -116,6 +116,13 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/UserDto'
+        mustChangePassword:
+          type: boolean
+          description: >-
+            When true, the authenticated user must change their password before
+            accessing any other endpoint. The client must route to the
+            change-password screen; the server blocks all other authorized
+            endpoints until the change completes.
 
     MessageResponse:
       type: object
