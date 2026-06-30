@@ -2,7 +2,9 @@ package com.turfbook.backend.controller;
 
 import com.turfbook.backend.api.AdminSubscriptionsApi;
 import com.turfbook.backend.dto.ActivateChangeRequest;
+import com.turfbook.backend.dto.CourtChangeRequest;
 import com.turfbook.backend.dto.RejectChangeRequest;
+import com.turfbook.backend.dto.RejectCourtChangeRequestBody;
 import com.turfbook.backend.dto.SelectableCourt;
 import com.turfbook.backend.dto.Subscription;
 import com.turfbook.backend.dto.SubscriptionChangeRequest;
@@ -102,6 +104,23 @@ public class AdminSubscriptionController implements AdminSubscriptionsApi {
     @Override
     public ResponseEntity<SubscriptionChangeRequest> adminRejectChangeRequest(Long id, RejectChangeRequest request) {
         return ResponseEntity.ok(subscriptionService.adminRejectChangeRequest(id, request));
+    }
+
+    // ─── Court-change requests (super-admin gated in the service) ──────────────
+
+    @Override
+    public ResponseEntity<List<CourtChangeRequest>> adminListCourtChangeRequests(String status) {
+        return ResponseEntity.ok(subscriptionService.adminListCourtChangeRequests(status));
+    }
+
+    @Override
+    public ResponseEntity<CourtChangeRequest> adminApproveCourtChangeRequest(Long id) {
+        return ResponseEntity.ok(subscriptionService.adminApproveCourtChangeRequest(id));
+    }
+
+    @Override
+    public ResponseEntity<CourtChangeRequest> adminRejectCourtChangeRequest(Long id, RejectCourtChangeRequestBody body) {
+        return ResponseEntity.ok(subscriptionService.adminRejectCourtChangeRequest(id, body.getReason()));
     }
 
     private Long currentUserId() {

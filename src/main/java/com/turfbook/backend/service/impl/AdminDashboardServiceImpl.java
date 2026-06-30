@@ -3,6 +3,7 @@ package com.turfbook.backend.service.impl;
 import com.turfbook.backend.dto.*;
 import com.turfbook.backend.entity.BookingEntity;
 import com.turfbook.backend.entity.DisputeEntity;
+import com.turfbook.backend.entity.CourtChangeRequestEntity;
 import com.turfbook.backend.entity.SubscriptionChangeRequestEntity;
 import com.turfbook.backend.entity.SubscriptionStatus;
 import com.turfbook.backend.entity.UserEntity;
@@ -68,6 +69,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     private final DisputeRepository disputeRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionChangeRequestRepository changeRequestRepository;
+    private final CourtChangeRequestRepository courtChangeRequestRepository;
     private final CouponRepository couponRepository;
 
     @Override
@@ -139,6 +141,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         // ── Needs-attention (standing work queues) ──
         long openDisputes = disputeRepository.countByStatusIn(OPEN_DISPUTE_STATUSES);
         long subRequests = changeRequestRepository.countByStatus(SubscriptionChangeRequestEntity.Status.PENDING);
+        long courtChangeReqs = courtChangeRequestRepository.countByStatus(CourtChangeRequestEntity.Status.PENDING);
         long expiringSubs = subscriptionRepository.countByStatusInAndPeriodEndBetween(
                 PAYING_SUBS, now, now.plusDays(7));
         long trialsEnding = subscriptionRepository.countByStatusAndTrialEndBetween(
@@ -149,6 +152,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 pendingModeration, "Venues", Map.of("tab", "PENDING")));
         attention.add(attentionItem(NeedsAttentionKey.SUBSCRIPTION_REQUESTS, "Subscription requests",
                 subRequests, "SubscriptionManagement", Map.of("tab", "requests")));
+        // Court-change requests are actioned only by super-admins; the FE hides this tile for other
+        // admin roles (the shared 45s dashboard cache is role-agnostic, so we always include it here).
+        attention.add(attentionItem(NeedsAttentionKey.COURT_CHANGE_REQUESTS, "Court change requests",
+                courtChangeReqs, "CourtChangeRequests", null));
         attention.add(attentionItem(NeedsAttentionKey.OPEN_DISPUTES, "Open disputes",
                 openDisputes, "Disputes", null));
         attention.add(attentionItem(NeedsAttentionKey.EXPIRING_SUBSCRIPTIONS, "Expiring subscriptions",

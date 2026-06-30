@@ -1284,6 +1284,20 @@ components:
         effectiveCloseTime:
           type: string
           readOnly: true
+        isLive:
+          type: boolean
+          readOnly: true
+          description: >
+            True when this court is LIVE (player-bookable): active AND covered by the venue's
+            current live subscription. False = LOCKED (exists, owner-only, not shown to players).
+            Owner/admin court lists include locked courts; player responses include only live ones.
+        isDeleted:
+          type: boolean
+          readOnly: true
+          description: >
+            True when this court was soft-deleted by the owner. The row is kept in the DB for audit
+            but is hidden from the owner and players; only admin/super-admin responses include
+            deleted courts (so they can be flagged with a "Deleted" badge).
 
     CreateCourtRequest:
       type: object
@@ -1926,7 +1940,7 @@ components:
       enum: [UP, DOWN, FLAT]
     NeedsAttentionKey:
       type: string
-      enum: [PENDING_APPROVALS, SUBSCRIPTION_REQUESTS, OPEN_DISPUTES, EXPIRING_SUBSCRIPTIONS, TRIALS_ENDING]
+      enum: [PENDING_APPROVALS, SUBSCRIPTION_REQUESTS, COURT_CHANGE_REQUESTS, OPEN_DISPUTES, EXPIRING_SUBSCRIPTIONS, TRIALS_ENDING]
 
     CountMetric:
       type: object
@@ -2689,6 +2703,49 @@ components:
         sport: { type: string, nullable: true }
         isActive: { type: boolean }
         isCovered: { type: boolean, description: "Already covered by the current subscription." }
+
+    CourtLiveBody:
+      type: object
+      description: Toggle whether one court is live (player-bookable) under the venue's subscription.
+      required: [live]
+      properties:
+        live: { type: boolean, description: "true = make live (occupy a plan slot); false = lock." }
+
+    CourtChangeRequest:
+      type: object
+      description: >
+        An owner request to change a venue's LIVE court set after activation. Owners can freely
+        activate a DRAFT court into a FREE slot, but freeing/swapping an already-LIVE court needs a
+        super-admin to approve this request.
+      required: [id, venueId, status, liveCourtId, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        venueId: { type: integer, format: int64 }
+        venueName: { type: string, nullable: true }
+        ownerName: { type: string, nullable: true }
+        liveCourtId: { type: integer, format: int64, description: "The currently-LIVE court to free." }
+        liveCourtName: { type: string, nullable: true }
+        draftCourtId: { type: integer, format: int64, nullable: true, description: "Optional DRAFT court put live in its place." }
+        draftCourtName: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED] }
+        decisionNote: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        decidedAt: { type: string, format: date-time, nullable: true }
+
+    CreateCourtChangeRequestBody:
+      type: object
+      required: [liveCourtId]
+      properties:
+        liveCourtId: { type: integer, format: int64, description: "The currently-LIVE court to free." }
+        draftCourtId: { type: integer, format: int64, nullable: true, description: "Optional DRAFT court to put live in its place (swap)." }
+        reason: { type: string, nullable: true, maxLength: 500 }
+
+    RejectCourtChangeRequestBody:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, maxLength: 500 }
 
     PendingRequestRef:
       type: object
@@ -5666,6 +5723,182 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SelectableCourt'
+
+  /api/v1/owner/venues/{venueId}/courts/{courtId}/live:
+    put:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Make a single court live or locked for players (Owner)
+      description: >
+        Toggle one court's player-visibility by adding/removing it from the subscription's covered
+        set. Enabling beyond the plan's live-court limit returns 409 (details.code=COURT_LIVE_LIMIT);
+        disabling always succeeds. Idempotent. Returns the refreshed venue subscription state.
+      operationId: setVenueCourtLive
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: courtId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourtLiveBody'
+      responses:
+        '200':
+          description: Updated subscription state (with new live/covered set)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueSubscriptionState'
+        '409':
+          description: Cannot make live (typed code in error/details.code, e.g. COURT_LIVE_LIMIT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/owner/venues/{venueId}/court-change-requests:
+    get:
+      tags: [OwnerSubscriptionPurchase]
+      summary: List this venue's court-change requests (Owner)
+      operationId: listOwnerCourtChangeRequests
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Court-change requests, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourtChangeRequest'
+    post:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Request to free/swap an already-LIVE court (Owner → super-admin)
+      description: >
+        Owners can't deactivate a LIVE court themselves; they file this request and a super-admin
+        approves it. Frees liveCourtId and, optionally, puts draftCourtId live in its place.
+      operationId: createCourtChangeRequest
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCourtChangeRequestBody'
+      responses:
+        '201':
+          description: Pending court-change request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourtChangeRequest'
+        '409':
+          description: Not allowed (typed code in error/details.code)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/owner/venues/{venueId}/court-change-requests/{requestId}/cancel:
+    post:
+      tags: [OwnerSubscriptionPurchase]
+      summary: Cancel a pending court-change request (Owner)
+      operationId: cancelCourtChangeRequest
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: The cancelled request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourtChangeRequest'
+
+  /api/v1/admin/court-change-requests:
+    get:
+      tags: [AdminSubscriptions]
+      summary: List court-change requests by status (Super-admin queue)
+      operationId: adminListCourtChangeRequests
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED], default: PENDING }
+      responses:
+        '200':
+          description: Court-change requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourtChangeRequest'
+
+  /api/v1/admin/court-change-requests/{id}/approve:
+    post:
+      tags: [AdminSubscriptions]
+      summary: Approve a court-change request and apply it (Super-admin only)
+      description: >
+        Re-validates current state (liveCourtId still live, draftCourtId still a draftable court);
+        if overtaken, the request is auto-rejected as stale. Only a SUPER_ADMIN may call this.
+      operationId: adminApproveCourtChangeRequest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: The approved (or stale-rejected) request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourtChangeRequest'
+
+  /api/v1/admin/court-change-requests/{id}/reject:
+    post:
+      tags: [AdminSubscriptions]
+      summary: Reject a court-change request (Super-admin only)
+      operationId: adminRejectCourtChangeRequest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectCourtChangeRequestBody'
+      responses:
+        '200':
+          description: The rejected request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourtChangeRequest'
 
   /api/v1/owner/venues/{venueId}/trial:
     post:

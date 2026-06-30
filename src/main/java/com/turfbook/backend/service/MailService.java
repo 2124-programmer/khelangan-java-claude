@@ -12,4 +12,18 @@ public interface MailService {
     void sendEmailChangeApproved(String toEmail, String newEmail);
 
     void sendEmailChangeRejected(String toEmail, String newEmail, String reason);
+
+    /**
+     * Warn an owner that a venue's trial/subscription ends in {@code daysRemaining} days, so they can
+     * renew/activate before courts stop being bookable.
+     *
+     * @param trial true for a free-trial period, false for a paid subscription
+     */
+    void sendSubscriptionExpiryWarning(String toEmail, String venueName, int daysRemaining, boolean trial);
+
+    /**
+     * Remind an owner that a venue's subscription has ended (courts no longer visible to players) and
+     * prompt them to purchase/renew to relist.
+     */
+    void sendSubscriptionExpiredReminder(String toEmail, String venueName);
 }
