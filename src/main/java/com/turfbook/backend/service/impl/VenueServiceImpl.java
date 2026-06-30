@@ -237,14 +237,25 @@ public class VenueServiceImpl implements VenueService {
         if (!isAuthenticated()) {
             dto.setContactPhone(null);
         }
+        // Mark each court live/locked from the venue's bookable (active + subscription-covered) set
+        // so the owner preview can badge them; players only ever see the live ones (filtered below).
+        Set<Long> bookable = new HashSet<>(subscriptionGate.bookableCourtIds(venue.getId()));
+        if (dto.getCourts() != null) {
+            dto.getCourts().forEach(c -> c.setIsLive(bookable.contains(c.getId())));
+        }
         // The approval thread is owner/admin-only context — never exposed to public/player calls.
         if (privileged) {
+            // Owner sees a deleted court as gone; only admin/super-admin keep deleted courts in view.
+            if (!isAdminPrincipal() && dto.getCourts() != null) {
+                dto.setCourts(dto.getCourts().stream()
+                        .filter(c -> !Boolean.TRUE.equals(c.getIsDeleted()))
+                        .collect(Collectors.toList()));
+            }
             dto.setApprovalComments(buildCommentDtos(venue));
         } else {
             // Player/public view: expose only player-bookable courts (active + covered by the
             // venue's live subscription). If none are bookable the venue is effectively invisible
             // to players, so 404 rather than return an empty, un-bookable listing.
-            Set<Long> bookable = new HashSet<>(subscriptionGate.bookableCourtIds(venue.getId()));
             List<CourtDto> visible = dto.getCourts() == null ? new ArrayList<>()
                     : dto.getCourts().stream().filter(c -> bookable.contains(c.getId())).collect(Collectors.toList());
             if (visible.isEmpty()) {
@@ -261,10 +272,18 @@ public class VenueServiceImpl implements VenueService {
         if (auth == null || !(auth.getPrincipal() instanceof UserPrincipal principal)) {
             return false;
         }
-        boolean isAdmin = auth.getAuthorities().stream()
-                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
         boolean isOwner = venue.getOwner() != null && venue.getOwner().getId().equals(principal.getId());
-        return isAdmin || isOwner;
+        return isAdminPrincipal() || isOwner;
+    }
+
+    /**
+     * True only for ADMIN/super-admin principals. Used to gate visibility of soft-deleted courts:
+     * the owner sees a deleted court as gone, but admins still see it (flagged) for audit.
+     */
+    private boolean isAdminPrincipal() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 
     @Override
@@ -426,7 +445,11 @@ public class VenueServiceImpl implements VenueService {
             venue.setApprovedAt(subscriptionDates.now());
         }
         venue.setStatus(newStatus);
-        venue = venueRepository.save(venue);
+        // Flush the status change on its own. The side-effects below (comment, lifecycle event,
+        // notification) are each flushed eagerly too, so the persistence context never accumulates
+        // several pending inserts that get auto-flushed together — that mixed-DML auto-flush is what
+        // triggered a Hibernate NPE in prepareEntityFlushes during approval.
+        venue = venueRepository.saveAndFlush(venue);
 
         if (approving) {
             addComment(venue, VenueApprovalCommentEntity.Action.APPROVED,
@@ -514,7 +537,7 @@ public class VenueServiceImpl implements VenueService {
                     "Only a draft venue (or one sent back for changes) can be submitted for approval.");
         }
 
-        int courts = (int) courtRepository.countByVenue(venue);
+        int courts = (int) courtRepository.countByVenueAndStatus(venue, CourtStatus.ACTIVE);
         if (courts < 1) {
             throw new BadRequestException("Add at least one court before submitting for approval.");
         }
@@ -753,7 +776,7 @@ public class VenueServiceImpl implements VenueService {
     }
 
     private VenueCompleteness buildCompleteness(VenueEntity venue, UserEntity owner) {
-        long courts = courtRepository.countByVenue(venue);
+        long courts = courtRepository.countByVenueAndStatus(venue, CourtStatus.ACTIVE);
         boolean photos = venue.getPhotos() != null && !venue.getPhotos().isEmpty();
         boolean address = StringUtils.hasText(venue.getAddress()) && StringUtils.hasText(venue.getPincode());
         boolean phone = StringUtils.hasText(venue.getContactPhone())
@@ -773,7 +796,9 @@ public class VenueServiceImpl implements VenueService {
     /** Append a lifecycle audit event (best-effort; never blocks the main flow). */
     private void recordLifecycle(VenueEntity venue, VenueLifecycleEventEntity.Type type, String meta) {
         try {
-            lifecycleEventRepository.save(VenueLifecycleEventEntity.builder()
+            // saveAndFlush: flush this insert on its own so it doesn't pile up with other pending
+            // writes into a single mixed auto-flush (the Hibernate prepareEntityFlushes NPE trigger).
+            lifecycleEventRepository.saveAndFlush(VenueLifecycleEventEntity.builder()
                     .venue(venue)
                     .type(type)
                     .occurredAt(subscriptionDates.now())
@@ -787,7 +812,9 @@ public class VenueServiceImpl implements VenueService {
     /** Append an approval-thread entry for a venue. */
     private void addComment(VenueEntity venue, VenueApprovalCommentEntity.Action action,
                             VenueApprovalCommentEntity.AuthorRole role, String comment) {
-        approvalCommentRepository.save(VenueApprovalCommentEntity.builder()
+        // saveAndFlush: keep this insert from accumulating with other pending writes (see saveAndFlush
+        // note in updateVenueStatus) — avoids the mixed auto-flush that NPEs in prepareEntityFlushes.
+        approvalCommentRepository.saveAndFlush(VenueApprovalCommentEntity.builder()
                 .venue(venue)
                 .action(action)
                 .authorRole(role)
@@ -833,13 +860,35 @@ public class VenueServiceImpl implements VenueService {
 
     // ─── Courts ────────────────────────────────────────────────────────────
 
+    /**
+     * Hard upper bound on courts per venue. The plan limit caps how many courts can be LIVE
+     * (player-bookable), not how many can exist — owners may build any number and toggle which are
+     * live. This cap only guards against runaway/abusive creation.
+     */
+    private static final int MAX_COURTS_PER_VENUE = 50;
+
     @Override
     @Transactional(readOnly = true)
     public List<CourtDto> listCourts(Long venueId) {
         log.info("VenueService.listCourts() called - venueId={}", venueId);
         VenueEntity venue = venueRepository.findById(venueId)
                 .orElseThrow(() -> new ResourceNotFoundException("Venue", "id", venueId));
-        return courtRepository.findByVenue(venue).stream().map(courtMapper::toDto).toList();
+        // Owner/admin see every court (with a live/locked marker so they can manage the live set);
+        // anyone else (players, anonymous) sees only the player-bookable (live) courts. This is the
+        // server-side guard — clients never decide visibility.
+        boolean privileged = canViewNonLiveVenue(venue);
+        boolean isAdmin = isAdminPrincipal();
+        Set<Long> bookable = new HashSet<>(subscriptionGate.bookableCourtIds(venueId));
+        return courtRepository.findByVenue(venue).stream()
+                // Soft-deleted courts are admin-only: the owner (and players) see them as gone.
+                .filter(court -> isAdmin || !court.isDeleted())
+                .map(court -> {
+                    CourtDto dto = courtMapper.toDto(court);
+                    dto.setIsLive(bookable.contains(court.getId()));
+                    return dto;
+                })
+                .filter(dto -> privileged || Boolean.TRUE.equals(dto.getIsLive()))
+                .toList();
     }
 
     @Override
@@ -851,8 +900,13 @@ public class VenueServiceImpl implements VenueService {
         if (!venue.getOwner().getId().equals(ownerId)) {
             throw new UnauthorizedException("You do not own this venue");
         }
-        // Enforce the active plan's court limit (409 if no active plan or limit reached).
-        subscriptionGate.assertCanAddCourt(venueId);
+        // Court creation is decoupled from the plan quota: a new court is always created LOCKED
+        // (not player-bookable) and the owner explicitly makes it live (subscriptionGate / the
+        // owner live-toggle enforces the plan's live-court limit). Only the abuse cap applies here.
+        if (courtRepository.countByVenueAndStatus(venue, CourtStatus.ACTIVE) >= MAX_COURTS_PER_VENUE) {
+            throw new ConflictException(
+                    "This venue has reached the maximum of " + MAX_COURTS_PER_VENUE + " courts.");
+        }
         return courtMapper.toDto(createCourtInternal(venue, request));
     }
 
@@ -869,7 +923,8 @@ public class VenueServiceImpl implements VenueService {
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
 
         if (StringUtils.hasText(request.getName()) && !request.getName().equals(court.getName())) {
-            if (courtRepository.existsByVenueAndNameAndIdNot(venue, request.getName(), courtId)) {
+            if (courtRepository.existsByVenueAndNameAndIdNotAndStatus(
+                    venue, request.getName(), courtId, CourtStatus.ACTIVE)) {
                 throw new ConflictException("This venue already has a court named '" + request.getName() + "'");
             }
             court.setName(request.getName());
@@ -931,7 +986,15 @@ public class VenueServiceImpl implements VenueService {
         }
         CourtEntity court = courtRepository.findByIdAndVenue(courtId, venue)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
-        courtRepository.delete(court);
+        if (court.isDeleted()) return; // already soft-deleted — idempotent
+        // Soft delete: keep the row (and its slots/booking history) in the DB for audit and admin
+        // inspection, but mark it DELETED + inactive so it vanishes for the owner and players. Drop
+        // it from the subscription's covered set so it never occupies a live slot or counts as used.
+        court.setStatus(CourtStatus.DELETED);
+        court.setActive(false);
+        courtRepository.save(court);
+        subscriptionGate.onCourtDeleted(venueId, courtId);
+        log.info("Soft-deleted court {} (venue {}) by owner {}", courtId, venueId, ownerId);
     }
 
     // ─── Slots ─────────────────────────────────────────────────────────────
@@ -942,6 +1005,14 @@ public class VenueServiceImpl implements VenueService {
         log.info("VenueService.listSlots() called - courtId={}, date={}", courtId, date);
         CourtEntity court = courtRepository.findById(courtId)
                 .orElseThrow(() -> new ResourceNotFoundException("Court", "id", courtId));
+
+        // Players may only see slots of LIVE (active + subscription-covered) courts. Owner/admin of
+        // the venue see all (for calendar management). A locked court is a 404 to players so its
+        // availability can't be enumerated by calling this endpoint directly with the court id.
+        if (!canViewNonLiveVenue(court.getVenue())
+                && !subscriptionGate.isCourtBookable(court.getVenue().getId(), courtId)) {
+            throw new ResourceNotFoundException("Court", "id", courtId);
+        }
 
         int openHour  = Integer.parseInt(court.effectiveOpenTime().split(":")[0]);
         int closeHour = Integer.parseInt(court.effectiveCloseTime().split(":")[0]);
@@ -1026,6 +1097,11 @@ public class VenueServiceImpl implements VenueService {
             courts = courts.stream()
                     .filter(c -> c.getSport().getId().equals(sportId))
                     .toList();
+        }
+        // Players only get slots for LIVE courts; owner/admin of the venue get all (calendar mgmt).
+        if (!canViewNonLiveVenue(venue)) {
+            Set<Long> bookable = new HashSet<>(subscriptionGate.bookableCourtIds(venueId));
+            courts = courts.stream().filter(c -> bookable.contains(c.getId())).toList();
         }
 
         return courts.stream().map(court -> {
@@ -1199,7 +1275,7 @@ public class VenueServiceImpl implements VenueService {
 
         validateCourtSport(venue, sport);
 
-        if (courtRepository.existsByVenueAndName(venue, req.getName())) {
+        if (courtRepository.existsByVenueAndNameAndStatus(venue, req.getName(), CourtStatus.ACTIVE)) {
             throw new ConflictException("This venue already has a court named '" + req.getName() + "'");
         }
 

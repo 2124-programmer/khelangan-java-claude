@@ -1,7 +1,10 @@
 package com.turfbook.backend.controller;
 
 import com.turfbook.backend.api.OwnerSubscriptionPurchaseApi;
+import com.turfbook.backend.dto.CourtChangeRequest;
+import com.turfbook.backend.dto.CourtLiveBody;
 import com.turfbook.backend.dto.CourtSelectionBody;
+import com.turfbook.backend.dto.CreateCourtChangeRequestBody;
 import com.turfbook.backend.dto.PaidRequestBody;
 import com.turfbook.backend.dto.PlanOption;
 import com.turfbook.backend.dto.SelectableCourt;
@@ -61,6 +64,28 @@ public class OwnerSubscriptionPurchaseController implements OwnerSubscriptionPur
     @Override
     public ResponseEntity<VenueSubscriptionState> cancelVenueSubscriptionRequest(Long venueId) {
         return ResponseEntity.ok(subscriptionService.ownerCancelSubscriptionRequest(venueId, currentUserId()));
+    }
+
+    @Override
+    public ResponseEntity<VenueSubscriptionState> setVenueCourtLive(Long venueId, Long courtId, CourtLiveBody body) {
+        return ResponseEntity.ok(subscriptionService.ownerSetCourtLive(
+                venueId, courtId, currentUserId(), Boolean.TRUE.equals(body.getLive())));
+    }
+
+    @Override
+    public ResponseEntity<java.util.List<CourtChangeRequest>> listOwnerCourtChangeRequests(Long venueId) {
+        return ResponseEntity.ok(subscriptionService.ownerListCourtChangeRequests(venueId, currentUserId()));
+    }
+
+    @Override
+    public ResponseEntity<CourtChangeRequest> createCourtChangeRequest(Long venueId, CreateCourtChangeRequestBody body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(subscriptionService.ownerCreateCourtChangeRequest(venueId, currentUserId(), body));
+    }
+
+    @Override
+    public ResponseEntity<CourtChangeRequest> cancelCourtChangeRequest(Long venueId, Long requestId) {
+        return ResponseEntity.ok(subscriptionService.ownerCancelCourtChangeRequest(venueId, requestId, currentUserId()));
     }
 
     private Long currentUserId() {

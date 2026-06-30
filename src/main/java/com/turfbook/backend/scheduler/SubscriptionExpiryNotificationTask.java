@@ -3,7 +3,9 @@ package com.turfbook.backend.scheduler;
 import com.turfbook.backend.entity.NotificationEntity;
 import com.turfbook.backend.entity.SubscriptionEntity;
 import com.turfbook.backend.entity.SubscriptionStatus;
+import com.turfbook.backend.entity.UserEntity;
 import com.turfbook.backend.repository.SubscriptionRepository;
+import com.turfbook.backend.service.MailService;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.subscription.SubscriptionDateCalculator;
 import lombok.RequiredArgsConstructor;
@@ -17,8 +19,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * Emits owner reminders as a live-gating subscription nears its end (trial or paid period).
- * Notifies once per threshold (7 → 3 → 1 days) and escalates as the deadline nears, staying
+ * Emits owner reminders (in-app + email) as a live-gating subscription nears its end (trial or paid
+ * period). The first reminder fires within the last 5 days and escalates (5 → 3 → 1 days), staying
  * idempotent via {@link SubscriptionEntity#getExpiryNotifiedThreshold()} so a restart or a second
  * hourly run never re-sends the same reminder.
  */
@@ -27,14 +29,15 @@ import java.util.List;
 @Slf4j
 public class SubscriptionExpiryNotificationTask {
 
-    /** Reminder thresholds in days, most-urgent last. */
-    private static final int[] THRESHOLDS = {7, 3, 1};
+    /** Reminder thresholds in days, most-urgent last. First reminder is in the last 5 days. */
+    private static final int[] THRESHOLDS = {5, 3, 1};
 
     private static final List<SubscriptionStatus> LIVE_GATING =
             List.of(SubscriptionStatus.TRIALING, SubscriptionStatus.ACTIVE);
 
     private final SubscriptionRepository subscriptionRepository;
     private final NotificationService notificationService;
+    private final MailService mailService;
     private final SubscriptionDateCalculator dates;
 
     @Scheduled(fixedRate = 3_600_000)
@@ -80,9 +83,23 @@ public class SubscriptionExpiryNotificationTask {
         notificationService.createNotification(sub.getOwner(), title, body,
                 NotificationEntity.NotificationType.SYSTEM);
 
+        // Best-effort email in addition to the in-app notification (mail send is async + swallows
+        // its own failures, so it never breaks the reminder bookkeeping below).
+        String email = ownerEmail(sub.getOwner());
+        if (email != null) {
+            mailService.sendSubscriptionExpiryWarning(email, sub.getVenue().getName(), (int) remainingDays, trial);
+        }
+
         sub.setExpiryNotifiedThreshold(crossed);
         subscriptionRepository.save(sub);
         log.info("Sent {}-day expiry reminder for subscription {} (venue {})",
                 crossed, sub.getId(), sub.getVenue().getId());
+    }
+
+    /** The owner's deliverable email: the active (login) email, falling back to the original. */
+    static String ownerEmail(UserEntity owner) {
+        if (owner == null) return null;
+        if (owner.getActiveEmail() != null && !owner.getActiveEmail().isBlank()) return owner.getActiveEmail();
+        return owner.getEmail() != null && !owner.getEmail().isBlank() ? owner.getEmail() : null;
     }
 }

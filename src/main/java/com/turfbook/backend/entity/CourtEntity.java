@@ -57,6 +57,15 @@ public class CourtEntity {
     @Builder.Default
     private boolean isActive = true;
 
+    /**
+     * Soft-delete state. ACTIVE = a real court; DELETED = removed by the owner but kept in the DB
+     * (hidden from owner/players, visible only to admin/super-admin). Never hard-deleted.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 16)
+    @Builder.Default
+    private CourtStatus status = CourtStatus.ACTIVE;
+
     @Column(name = "peak_price", nullable = false)
     @Builder.Default
     private int peakPrice = 0;
@@ -64,6 +73,11 @@ public class CourtEntity {
     @OneToMany(mappedBy = "court", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
     private List<SlotEntity> slots = new ArrayList<>();
+
+    /** Soft-deleted: kept in the DB but hidden from owner/players (admin-only). */
+    public boolean isDeleted() {
+        return status == CourtStatus.DELETED;
+    }
 
     /** Resolves the effective price per hour, falling back to venue price. */
     public int effectivePricePerHour() {
