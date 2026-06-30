@@ -116,6 +116,15 @@ public class SubscriptionEntity {
     @Column(name = "expiry_notified_threshold")
     private Integer expiryNotifiedThreshold;
 
+    /**
+     * True once the post-expiry "purchase/renew to relist" reminder has been sent (a few days after
+     * the period ended). Keeps that reminder one-shot per period; reset to false when a fresh period
+     * starts (renew/activate), alongside {@link #expiryNotifiedThreshold}.
+     */
+    @Column(name = "post_expiry_reminder_sent", nullable = false)
+    @Builder.Default
+    private boolean postExpiryReminderSent = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

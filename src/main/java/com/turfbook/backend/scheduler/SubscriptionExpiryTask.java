@@ -6,6 +6,7 @@ import com.turfbook.backend.entity.SubscriptionStatus;
 import com.turfbook.backend.entity.VenueEntity;
 import com.turfbook.backend.repository.SubscriptionRepository;
 import com.turfbook.backend.repository.VenueRepository;
+import com.turfbook.backend.service.MailService;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.subscription.SubscriptionDateCalculator;
 import lombok.RequiredArgsConstructor;
@@ -34,9 +35,17 @@ public class SubscriptionExpiryTask {
     private static final List<SubscriptionStatus> LIVE_GATING =
             List.of(SubscriptionStatus.TRIALING, SubscriptionStatus.ACTIVE);
 
+    /** Statuses a subscription can be in after its period ended (courts already hidden from players). */
+    private static final List<SubscriptionStatus> POST_PERIOD =
+            List.of(SubscriptionStatus.PAST_DUE, SubscriptionStatus.EXPIRED);
+
+    /** Days after period end to nudge the owner to purchase/renew and relist. */
+    private static final int POST_EXPIRY_REMINDER_DAYS = 3;
+
     private final SubscriptionRepository subscriptionRepository;
     private final VenueRepository venueRepository;
     private final NotificationService notificationService;
+    private final MailService mailService;
     private final SubscriptionDateCalculator dates;
 
     /** Period end → PAST_DUE + suspend venue. Runs hourly. */
@@ -83,6 +92,38 @@ public class SubscriptionExpiryTask {
                 } catch (Exception e) {
                     log.error("Failed to expire subscription {} — skipping", sub.getId(), e);
                 }
+            }
+        }
+    }
+
+    /**
+     * A few days after a venue's period ended (and its courts went dark), nudge the owner — in-app +
+     * email — to purchase/renew and relist. One-shot per period via {@code postExpiryReminderSent},
+     * which {@code snapshot()} resets on every fresh activation/renew. Runs hourly.
+     */
+    @Scheduled(fixedRate = 3_600_000)
+    @Transactional
+    public void remindAfterExpiry() {
+        LocalDateTime now = dates.now();
+        List<SubscriptionEntity> postPeriod = subscriptionRepository.findByStatusIn(POST_PERIOD);
+        for (SubscriptionEntity sub : postPeriod) {
+            if (sub.isPostExpiryReminderSent() || sub.getPeriodEnd() == null) continue;
+            if (now.isBefore(sub.getPeriodEnd().plusDays(POST_EXPIRY_REMINDER_DAYS))) continue;
+            try {
+                notify(sub, "Purchase a plan to relist your venue",
+                        String.format("Your venue '%s' is hidden from players because its subscription ended. "
+                                + "Purchase or renew a plan to go live again — your courts and bookings are safe.",
+                                sub.getVenue().getName()));
+                String email = SubscriptionExpiryNotificationTask.ownerEmail(sub.getOwner());
+                if (email != null) {
+                    mailService.sendSubscriptionExpiredReminder(email, sub.getVenue().getName());
+                }
+                sub.setPostExpiryReminderSent(true);
+                subscriptionRepository.save(sub);
+                log.info("Sent post-expiry purchase reminder for subscription {} (venue {})",
+                        sub.getId(), sub.getVenue().getId());
+            } catch (Exception e) {
+                log.warn("Failed post-expiry reminder for subscription {}: {}", sub.getId(), e.getMessage());
             }
         }
     }

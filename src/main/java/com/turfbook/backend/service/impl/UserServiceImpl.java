@@ -306,8 +306,9 @@ public class UserServiceImpl implements UserService {
             throw new com.turfbook.backend.exception.BadRequestException(
                     "Password must contain at least one letter and one digit.");
         }
-        // Uniqueness against active_email so freed (deleted) identifiers don't falsely collide.
-        if (userRepository.existsByActiveEmail(email)) {
+        // Uniqueness against any live (non-deleted) account, matched on the raw email column so it
+        // holds even for a legacy row with a NULL active_email; freed (deleted) identifiers don't collide.
+        if (userRepository.isEmailInUseByLiveAccount(email, UserEntity.AccountStatus.DELETED)) {
             throw new ConflictException("Email already registered: " + request.getEmail());
         }
 

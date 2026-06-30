@@ -626,6 +626,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 .map(s -> new HashSet<>(s.getCoveredCourtIds()))
                 .orElseGet(HashSet::new);
         return courtRepository.findByVenue(venue).stream()
+                .filter(c -> !c.isDeleted()) // soft-deleted courts are never selectable for coverage
                 .sorted(Comparator.comparing(CourtEntity::getId))
                 .map(c -> new SelectableCourt()
                         .courtId(String.valueOf(c.getId()))
@@ -1088,6 +1089,22 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
     }
 
     @Override
+    @Transactional
+    public void onCourtDeleted(Long venueId, Long courtId) {
+        VenueEntity venue = venueRepository.findById(venueId).orElse(null);
+        if (venue == null || courtId == null) return;
+        currentEntity(venue).ifPresent(sub -> {
+            List<String> covered = sub.getCoveredCourtIds();
+            if (covered != null && covered.remove(String.valueOf(courtId))) {
+                subscriptionRepository.save(sub);
+                recomputeVenueLive(venue);
+                log.info("Uncovered soft-deleted court {} from subscription {} (venue {})",
+                        courtId, sub.getId(), venueId);
+            }
+        });
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<Long> bookableCourtIds(Long venueId) {
         VenueEntity venue = venueRepository.findById(venueId).orElse(null);
@@ -1099,6 +1116,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
             if (covered.isEmpty()) return List.<Long>of();
             return courtRepository.findByVenue(venue).stream()
                     .filter(CourtEntity::isActive)
+                    .filter(c -> !c.isDeleted())
                     .map(CourtEntity::getId)
                     .filter(id -> covered.contains(String.valueOf(id)))
                     .toList();
@@ -1189,8 +1207,9 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         sub.setCurrency(plan.getCurrency());
         sub.setFeatures(new ArrayList<>(plan.getFeatures()));
         // Every (re)activation/edit/renew gives the subscription a fresh period, so re-arm the
-        // expiry reminders (7/3/1) — the notification job will start escalating again from scratch.
+        // expiry reminders (5/3/1) and the post-expiry reminder — the jobs start fresh again.
         sub.setExpiryNotifiedThreshold(null);
+        sub.setPostExpiryReminderSent(false);
     }
 
     /** Recompute the venue's denormalized live flag + placement weight + bookable-court count. */
@@ -1368,7 +1387,11 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
 
     private VenueSubscriptionView buildView(VenueEntity venue, int historyLimit) {
         SubscriptionEntity current = currentEntity(venue).orElse(null);
-        int courtsUsed = (int) courtRepository.countByVenue(venue);
+        // "Courts used" is the live/covered set this plan makes player-bookable (always ≤ the plan
+        // limit), NOT the venue's total court count — a venue may own more courts than its plan
+        // covers (extras stay LOCKED), and deleted courts are uncovered, so neither inflates this.
+        int courtsUsed = current != null && current.getCoveredCourtIds() != null
+                ? current.getCoveredCourtIds().size() : 0;
         int courtsAllowed = current != null ? current.getMaxCourts() : 0;
         List<SubscriptionEntity> history = subscriptionRepository.findByVenue_IdOrderByIdDesc(
                 venue.getId(), PageRequest.of(0, historyLimit));

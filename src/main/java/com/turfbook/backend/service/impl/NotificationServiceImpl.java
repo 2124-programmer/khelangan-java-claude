@@ -142,7 +142,7 @@ public class NotificationServiceImpl implements NotificationService {
         log.info("NotificationService.createNotification() completed - userId={}, title={}", user.getId(), title);
 
         // Best-effort push to the user's devices (async, preference-gated, never blocks/fails here).
-        pushNotificationService.sendToUser(user, title, body, referenceId, referenceType);
+        pushNotificationService.sendToUser(user.getId(), title, body, referenceId, referenceType);
     }
 
     @Override

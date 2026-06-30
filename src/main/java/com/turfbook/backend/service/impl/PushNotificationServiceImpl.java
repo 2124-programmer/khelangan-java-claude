@@ -79,10 +79,14 @@ public class PushNotificationServiceImpl implements PushNotificationService {
     @Override
     @Async("mailExecutor")
     @Transactional(readOnly = true)
-    public void sendToUser(UserEntity user, String title, String body,
+    public void sendToUser(Long userId, String title, String body,
                            String referenceId, String referenceType) {
-        if (user == null) return;
+        if (userId == null) return;
         try {
+            // Re-load on THIS thread's session — the caller's managed entity must never cross the
+            // async boundary (sharing a Hibernate Session across threads corrupts its load state).
+            UserEntity user = userRepository.findById(userId).orElse(null);
+            if (user == null) return;
             if (!isPushEnabled(user)) {
                 log.debug("Push suppressed (preference off) for userId={}", user.getId());
                 return;
@@ -126,7 +130,7 @@ public class PushNotificationServiceImpl implements PushNotificationService {
             }
         } catch (Exception e) {
             // Best-effort: never let a push failure affect the request flow.
-            log.warn("Push send failed for userId={}: {}", user.getId(), e.getMessage());
+            log.warn("Push send failed for userId={}: {}", userId, e.getMessage());
         }
     }
 

@@ -1291,6 +1291,13 @@ components:
             True when this court is LIVE (player-bookable): active AND covered by the venue's
             current live subscription. False = LOCKED (exists, owner-only, not shown to players).
             Owner/admin court lists include locked courts; player responses include only live ones.
+        isDeleted:
+          type: boolean
+          readOnly: true
+          description: >
+            True when this court was soft-deleted by the owner. The row is kept in the DB for audit
+            but is hidden from the owner and players; only admin/super-admin responses include
+            deleted courts (so they can be flagged with a "Deleted" badge).
 
     CreateCourtRequest:
       type: object
