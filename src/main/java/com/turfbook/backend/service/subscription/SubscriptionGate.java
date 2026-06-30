@@ -49,6 +49,13 @@ public interface SubscriptionGate {
     void recomputeVenueLiveFlag(Long venueId);
 
     /**
+     * React to a court being soft-deleted: drop it from the current subscription's covered set (so a
+     * deleted court never occupies a live slot or counts as "used") and refresh the venue live flag.
+     * No-op when the venue has no current subscription or the court wasn't covered.
+     */
+    void onCourtDeleted(Long venueId, Long courtId);
+
+    /**
      * Player-bookable court ids for a venue: active courts whose id is covered by the venue's
      * current live-gating subscription. Empty when the venue is not LIVE or holds no live
      * subscription. The player feed and venue-detail projection use this to hide non-bookable courts.

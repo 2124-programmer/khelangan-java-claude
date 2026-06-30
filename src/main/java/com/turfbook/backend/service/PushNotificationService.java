@@ -1,7 +1,5 @@
 package com.turfbook.backend.service;
 
-import com.turfbook.backend.entity.UserEntity;
-
 public interface PushNotificationService {
 
     /** Register (or re-point) a device push token for a user. */
@@ -14,6 +12,10 @@ public interface PushNotificationService {
      * Deliver a push to all of a user's devices, honouring their stored push preference.
      * Best-effort + asynchronous: never blocks or fails the caller. A no-op when the user has
      * push disabled or no registered tokens.
+     *
+     * <p>Takes the user <em>id</em>, not the entity, on purpose: this runs on a separate thread, so
+     * it must NOT share a managed entity (and therefore the caller's Hibernate Session) across the
+     * async boundary. The user is re-loaded inside this method's own read-only session.
      */
-    void sendToUser(UserEntity user, String title, String body, String referenceId, String referenceType);
+    void sendToUser(Long userId, String title, String body, String referenceId, String referenceType);
 }

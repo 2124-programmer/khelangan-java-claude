@@ -1,6 +1,8 @@
 package com.turfbook.backend.service.subscription;
 
 import com.turfbook.backend.dto.ActivateChangeRequest;
+import com.turfbook.backend.dto.CourtChangeRequest;
+import com.turfbook.backend.dto.CreateCourtChangeRequestBody;
 import com.turfbook.backend.dto.CourtSelectionBody;
 import com.turfbook.backend.dto.PaidRequestBody;
 import com.turfbook.backend.dto.PlanOption;
@@ -88,4 +90,32 @@ public interface SubscriptionService {
 
     /** Cancel the venue's pending paid-plan request; returns the refreshed state. Throws 409 if none. */
     VenueSubscriptionState ownerCancelSubscriptionRequest(Long venueId, Long ownerId);
+
+    /**
+     * Owner toggles whether one court is LIVE (player-bookable) by adding/removing it from the
+     * subscription's covered set. DRAFT→LIVE into a free slot is allowed (cap-guarded, COURT_LIVE_LIMIT);
+     * deactivating an already-LIVE court is LOCKED for owners (COURT_LIVE_LOCKED — use a court-change
+     * request). Idempotent. Returns the refreshed state.
+     */
+    VenueSubscriptionState ownerSetCourtLive(Long venueId, Long courtId, Long ownerId, boolean live);
+
+    // ─── Court-change requests (owner files; super-admin approves) ─────────────
+
+    /** This venue's court-change requests, newest first (owner-scoped). */
+    List<CourtChangeRequest> ownerListCourtChangeRequests(Long venueId, Long ownerId);
+
+    /** Owner files a request to free (and optionally swap) an already-LIVE court. Throws 409 if invalid. */
+    CourtChangeRequest ownerCreateCourtChangeRequest(Long venueId, Long ownerId, CreateCourtChangeRequestBody body);
+
+    /** Owner cancels their own pending court-change request. */
+    CourtChangeRequest ownerCancelCourtChangeRequest(Long venueId, Long requestId, Long ownerId);
+
+    /** Super-admin queue of court-change requests by status (default PENDING). Super-admin only. */
+    List<CourtChangeRequest> adminListCourtChangeRequests(String status);
+
+    /** Super-admin approves + applies a court-change request (re-validates; auto-rejects if stale). */
+    CourtChangeRequest adminApproveCourtChangeRequest(Long id);
+
+    /** Super-admin rejects a court-change request with a reason. */
+    CourtChangeRequest adminRejectCourtChangeRequest(Long id, String reason);
 }

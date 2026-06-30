@@ -85,7 +85,9 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse register(RegisterRequest request) {
         log.info("AuthService.register() called - email={}", LogMaskUtil.maskEmail(request.getEmail()));
         String email = request.getEmail().toLowerCase().trim();
-        String phone = request.getPhone() != null ? request.getPhone().trim() : null;
+        // Normalize the phone (strip spaces/dashes) so uniqueness + active_phone match how the
+        // phone-change flow stores it — otherwise "98765 43210" and "9876543210" could both register.
+        String phone = normalizePhone(request.getPhone());
 
         // Terms & Privacy consent is mandatory (DPDP) — reject if not explicitly accepted.
         if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
@@ -94,13 +96,15 @@ public class AuthServiceImpl implements AuthService {
         // Enforce the shared password policy (≥8 chars, at least one letter and one digit).
         validatePasswordPolicy(request.getPassword());
 
-        // Uniqueness is enforced against active_email/active_phone so freed (deleted/banned) identifiers
-        // behave correctly: a DELETED account's active_* is NULL and no longer collides.
-        if (userRepository.existsByActiveEmail(email)) {
+        // Uniqueness is enforced against any LIVE (non-deleted) account that already holds this
+        // email/phone — matched on the raw column so it holds even if a legacy row never had its
+        // active_* backfilled. A DELETED account is excluded, so it frees its identifier for reuse.
+        if (userRepository.isEmailInUseByLiveAccount(email, UserEntity.AccountStatus.DELETED)) {
             throw new ConflictException("Email already registered: " + request.getEmail());
         }
-        if (phone != null && !phone.isEmpty() && userRepository.existsByActivePhone(phone)) {
-            throw new ConflictException("Phone number already registered: " + phone);
+        if (phone != null && !phone.isEmpty()
+                && userRepository.isPhoneInUseByLiveAccount(phone, UserEntity.AccountStatus.DELETED)) {
+            throw new ConflictException("Phone number already registered: " + request.getPhone());
         }
 
         UserEntity.Role role;
@@ -517,6 +521,12 @@ public class AuthServiceImpl implements AuthService {
             case DELETED -> "This account no longer exists.";
             default -> "Your account has been blocked. Please contact support.";
         };
+    }
+
+    /** Trim + strip spaces/dashes so phone uniqueness is consistent with the phone-change flow. */
+    private static String normalizePhone(String phone) {
+        if (phone == null) return null;
+        return phone.replaceAll("[\\s-]", "").trim();
     }
 
     private static String generateSecureHex(int bytes) {

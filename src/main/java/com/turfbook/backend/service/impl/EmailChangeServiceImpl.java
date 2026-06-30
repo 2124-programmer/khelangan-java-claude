@@ -62,7 +62,10 @@ public class EmailChangeServiceImpl implements EmailChangeService {
             throw new BadRequestException("New email is the same as your current email.");
         }
 
-        if (userRepository.existsByActiveEmail(newEmail)) {
+        // Block if ANY live (non-deleted) account already holds this email — matched on the raw
+        // column so a legacy row with a NULL active_email still collides (the bug that let two
+        // owners share an email). Deleted accounts are excluded, so a freed email can be reclaimed.
+        if (userRepository.isEmailInUseByLiveAccount(newEmail, UserEntity.AccountStatus.DELETED)) {
             throw new ConflictException("This email address is already in use.");
         }
 
@@ -156,7 +159,7 @@ public class EmailChangeServiceImpl implements EmailChangeService {
         // someone else between the request and this verification.
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
-        if (userRepository.existsByActiveEmail(entity.getNewEmail())) {
+        if (userRepository.isEmailInUseByLiveAccount(entity.getNewEmail(), UserEntity.AccountStatus.DELETED)) {
             entity.setStatus(Status.REJECTED);
             entity.setReason("This email address is already in use.");
             entity.setDecidedAt(LocalDateTime.now());

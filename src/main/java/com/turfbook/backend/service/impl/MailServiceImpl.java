@@ -108,6 +108,65 @@ public class MailServiceImpl implements MailService {
         send(toEmail, subject, text, null);
     }
 
+    @Override
+    @Async("mailExecutor")
+    public void sendSubscriptionExpiryWarning(String toEmail, String venueName, int daysRemaining, boolean trial) {
+        if (toEmail == null || toEmail.isBlank()) return;
+        String period = trial ? "free trial" : "subscription";
+        String action = trial ? "Activate a paid plan" : "Renew your plan";
+        String days = daysRemaining + (daysRemaining == 1 ? " day" : " days");
+        String subject = String.format("Your Score-Adda %s for '%s' ends in %s", period, venueName, days);
+        String text = String.format(
+                "Your Score-Adda %s for venue '%s' ends in %s.\n\n"
+                        + "%s in the Score-Adda app before it ends so your courts stay bookable by players.\n\n"
+                        + "If you let it lapse, your courts are hidden from players until you purchase a plan.",
+                period, venueName, days, action);
+        String html = noticeHtml(
+                "Your " + period + " ends in " + days,
+                String.format("Venue <b>%s</b>'s %s ends in <b>%s</b>. %s so your courts stay bookable by players.",
+                        escape(venueName), period, days, action),
+                action);
+        send(toEmail, subject, text, html);
+    }
+
+    @Override
+    @Async("mailExecutor")
+    public void sendSubscriptionExpiredReminder(String toEmail, String venueName) {
+        if (toEmail == null || toEmail.isBlank()) return;
+        String subject = String.format("Relist '%s' on Score-Adda — purchase a plan", venueName);
+        String text = String.format(
+                "Your Score-Adda subscription for venue '%s' has ended, so its courts are no longer "
+                        + "visible to players.\n\n"
+                        + "Purchase or renew a plan in the Score-Adda app to make '%s' live again. "
+                        + "Your existing bookings and courts are safe — nothing was deleted.",
+                venueName, venueName);
+        String html = noticeHtml(
+                "Purchase a plan to relist " + escape(venueName),
+                String.format("Venue <b>%s</b>'s subscription has ended, so its courts are hidden from players. "
+                        + "Purchase or renew a plan to go live again — your bookings and courts are safe.",
+                        escape(venueName)),
+                "Purchase a plan");
+        send(toEmail, subject, text, html);
+    }
+
+    /** Minimal branded HTML for a notice/CTA email (no code) — mirrors {@link #otpHtml} styling. */
+    private static String noticeHtml(String heading, String bodyHtml, String cta) {
+        return "<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#0A1730\">"
+                + "<h2 style=\"color:#0A1730;margin:0 0 12px\">" + heading + "</h2>"
+                + "<p style=\"margin:0 0 16px;font-size:14px;line-height:1.5\">" + bodyHtml + "</p>"
+                + "<div style=\"font-size:15px;font-weight:bold;background:#16A34A;border-radius:8px;"
+                + "padding:12px 16px;text-align:center;color:#FFFFFF\">" + cta + "</div>"
+                + "<p style=\"margin:16px 0 0;font-size:12px;color:#889\">"
+                + "Open the Score-Adda app → Venues → My Plan to manage your subscription.</p>"
+                + "</div>";
+    }
+
+    /** Minimal HTML-escape for interpolated names in email bodies. */
+    private static String escape(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
     /** Minimal branded HTML for an OTP email — kept simple/inline for deliverability. */
     private static String otpHtml(String heading, String intro, String otp, int expiresInMinutes) {
         return "<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#0A1730\">"

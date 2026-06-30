@@ -65,7 +65,9 @@ public class PhoneChangeServiceImpl implements PhoneChangeService {
             throw new BadRequestException("New phone is the same as your current phone.");
         }
 
-        if (userRepository.existsByActivePhone(newPhone)) {
+        // Block if any LIVE (non-deleted) account already holds this number — matched on the raw
+        // column (normalized in-query) so a legacy row with a NULL active_phone still collides.
+        if (userRepository.isPhoneInUseByLiveAccount(newPhone, UserEntity.AccountStatus.DELETED)) {
             throw new ConflictException("This phone number is already in use.");
         }
 
@@ -145,7 +147,7 @@ public class PhoneChangeServiceImpl implements PhoneChangeService {
         // claimed by someone else between request and verification.
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
-        if (userRepository.existsByActivePhone(entity.getNewPhone())) {
+        if (userRepository.isPhoneInUseByLiveAccount(entity.getNewPhone(), UserEntity.AccountStatus.DELETED)) {
             entity.setStatus(Status.REJECTED);
             entity.setReason("This phone number is already in use.");
             entity.setDecidedAt(LocalDateTime.now());
