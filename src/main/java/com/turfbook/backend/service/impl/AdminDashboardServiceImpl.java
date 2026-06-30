@@ -166,7 +166,31 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
         // ── Management tile counts (standing) ──
         ManagementCounts counts = new ManagementCounts();
-        counts.setVenues(venueRepository.count());
+
+        // Per-status venue breakdown so the dashboard "Venues" card gives admins clarity on the
+        // pipeline (Live / Pending / Changes / Rejected / Suspended / Draft / Archived) instead of a
+        // single opaque total. `activeVenues` above is already countByStatus(LIVE), so reuse it.
+        long pendingVenues = venueRepository.countByStatus(VenueEntity.VenueStatus.PENDING);
+        long changesVenues = venueRepository.countByStatus(VenueEntity.VenueStatus.CHANGES_REQUESTED);
+        long rejectedVenues = venueRepository.countByStatus(VenueEntity.VenueStatus.REJECTED);
+        long suspendedVenues = venueRepository.countByStatus(VenueEntity.VenueStatus.SUSPENDED);
+        long draftVenues = venueRepository.countByStatus(VenueEntity.VenueStatus.DRAFT);
+        long archivedVenues = venueRepository.countByStatus(VenueEntity.VenueStatus.ARCHIVED);
+
+        VenueStatusCounts venuesByStatus = new VenueStatusCounts();
+        venuesByStatus.setLive(activeVenues);
+        venuesByStatus.setPending(pendingVenues);
+        venuesByStatus.setChangesRequested(changesVenues);
+        venuesByStatus.setRejected(rejectedVenues);
+        venuesByStatus.setSuspended(suspendedVenues);
+        venuesByStatus.setDraft(draftVenues);
+        venuesByStatus.setArchived(archivedVenues);
+        counts.setVenuesByStatus(venuesByStatus);
+
+        // Headline count = "real" venues that actually show in the admin Venues list (the All tab =
+        // NON_DRAFT, ARCHIVED excluded). Previously this used venueRepository.count() (every row incl.
+        // DRAFT/ARCHIVED), so the tile (e.g. 13) disagreed with the list it links to (e.g. 4).
+        counts.setVenues(activeVenues + pendingVenues + changesVenues + rejectedVenues + suspendedVenues);
         counts.setPlayers(userRepository.countByRole(UserEntity.Role.PLAYER));
         counts.setOwners(userRepository.countByRole(UserEntity.Role.OWNER));
         counts.setBookings(bookingRepository.count());
