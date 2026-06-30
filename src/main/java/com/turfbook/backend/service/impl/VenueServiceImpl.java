@@ -542,25 +542,11 @@ public class VenueServiceImpl implements VenueService {
             throw new BadRequestException("Add at least one court before submitting for approval.");
         }
 
-        // Tier gating: ≤ free threshold submits free (Starter defaulted at approval); above it the owner
-        // must commit to a tier whose maxCourts ≥ court count.
-        if (courts > FREE_COURT_THRESHOLD) {
-            if (planId == null) {
-                throw new BadRequestException(String.format(
-                        "This venue has %d courts. Select a plan that supports at least %d courts to submit.",
-                        courts, courts));
-            }
-            SubscriptionPlanEntity plan = subscriptionPlanRepository.findById(planId)
-                    .orElseThrow(() -> new ResourceNotFoundException("SubscriptionPlan", "id", planId));
-            if (plan.getMaxCourts() < courts) {
-                throw new BadRequestException(String.format(
-                        "The %s plan allows %d courts but this venue has %d. Choose a higher tier.",
-                        plan.getName(), plan.getMaxCourts(), courts));
-            }
-            venue.setIntendedPlanCode(plan.getCode());
-        } else {
-            venue.setIntendedPlanCode(null); // free tier — Starter defaulted at approval
-        }
+        // Submission only requires at least one court — no plan commitment here. Plan/trial selection
+        // happens AFTER approval: the owner starts a free trial (or activates a paid plan) on the venue
+        // page and picks which courts to make bookable (see approval flow + startTrial). The legacy
+        // `planId` arg is ignored, and any previously-stored intent is cleared so it can't go stale.
+        venue.setIntendedPlanCode(null);
 
         venue.setStatus(VenueEntity.VenueStatus.PENDING);
         venue = venueRepository.save(venue);
