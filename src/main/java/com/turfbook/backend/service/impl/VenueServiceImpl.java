@@ -106,14 +106,14 @@ public class VenueServiceImpl implements VenueService {
             int to = Math.min(from + size, sorted.size());
             Page<VenueEntity> entityPage = new PageImpl<>(
                     new ArrayList<>(sorted.subList(from, to)), PageRequest.of(page, size), sorted.size());
-            return toVenueSummaryPage(entityPage);
+            return toVenueSummaryPage(entityPage, true);
         }
 
         Pageable pageable = PageRequest.of(page, size, resolveVenueSort(sort));
         Page<VenueEntity> entityPage = venueRepository.findLiveVenuesFiltered(
                 VenueEntity.VenueStatus.LIVE, cityParam, sportId, searchParam,
                 minPrice, maxPrice, minRating, pageable);
-        return toVenueSummaryPage(entityPage);
+        return toVenueSummaryPage(entityPage, true);
     }
 
     /** Great-circle distance in km between two lat/lng points. */
@@ -262,6 +262,10 @@ public class VenueServiceImpl implements VenueService {
                 throw new ResourceNotFoundException("Venue", "id", id);
             }
             dto.setCourts(visible);
+            // Show only the sports a bookable court actually offers, so the "Sports Available" chips
+            // and the slot-screen sport tabs match the courts players can really book (a venue may
+            // advertise sports whose courts aren't covered by the current subscription).
+            narrowSportsToBookable(dto, visible);
         }
         return dto;
     }
@@ -575,7 +579,7 @@ public class VenueServiceImpl implements VenueService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerId));
         Pageable pageable = PageRequest.of(page, size);
         Page<VenueEntity> entityPage = venueRepository.findByOwner(owner, pageable);
-        VenueSummaryPage page1 = toVenueSummaryPage(entityPage);
+        VenueSummaryPage page1 = toVenueSummaryPage(entityPage, false);
         // Attach the compact subscription badge to each owner card (no extra round-trip from the client).
         List<VenueEntity> entities = entityPage.getContent();
         for (int i = 0; i < entities.size(); i++) {
@@ -619,7 +623,7 @@ public class VenueServiceImpl implements VenueService {
         Pageable pageable = PageRequest.of(page, size);
         String search = StringUtils.hasText(q) ? q.trim() : null;
         Page<VenueEntity> entityPage = venueRepository.adminSearch(statusesForTab(status), search, pageable);
-        return toVenueSummaryPage(entityPage);
+        return toVenueSummaryPage(entityPage, false);
     }
 
     @Override
@@ -1400,7 +1404,7 @@ public class VenueServiceImpl implements VenueService {
         return slot;
     }
 
-    private VenueSummaryPage toVenueSummaryPage(Page<VenueEntity> entityPage) {
+    private VenueSummaryPage toVenueSummaryPage(Page<VenueEntity> entityPage, boolean playerView) {
         List<VenueEntity> entities = entityPage.getContent();
         Set<Long> favoriteVenueIds = currentPlayerFavoriteVenueIds();
         Map<Long, String> offerLabels = activeOfferLabels(entities);
@@ -1410,6 +1414,9 @@ public class VenueServiceImpl implements VenueService {
                     d.setIsFavorite(favoriteVenueIds.contains(v.getId()));
                     String offer = offerLabels.get(v.getId());
                     if (offer != null) d.setActiveOffer(new VenueOfferBadge().label(offer));
+                    // Discovery feed only: a card advertises only the sports and court count that
+                    // players can actually book. Owner/admin lists keep the full set.
+                    if (playerView) narrowSummaryToBookable(v, d);
                     return d;
                 })
                 .toList();
@@ -1420,6 +1427,43 @@ public class VenueServiceImpl implements VenueService {
         dto.setSize(entityPage.getSize());
         dto.setNumber(entityPage.getNumber());
         return dto;
+    }
+
+    /**
+     * Player/public detail view: restrict the sports list to those offered by the supplied
+     * (bookable) courts. Owner/admin keep the full venue.sports set. Mirrors the court filtering
+     * so players never see a sport chip/tab they can't actually book.
+     */
+    private void narrowSportsToBookable(VenueDetailDto dto, List<CourtDto> bookableCourts) {
+        if (dto.getSports() == null) return;
+        Set<Long> liveSportIds = bookableCourts.stream()
+                .map(CourtDto::getSportId)
+                .filter(sid -> sid != null)
+                .collect(Collectors.toSet());
+        dto.setSports(dto.getSports().stream()
+                .filter(s -> liveSportIds.contains(s.getId()))
+                .collect(Collectors.toList()));
+    }
+
+    /**
+     * Discovery feed: a card advertises only what players can book — the sports offered by the
+     * venue's bookable (active + subscription-covered) courts, and the bookable court count.
+     * Owner/admin lists keep the full sports/court set, so this runs for the player feed only.
+     */
+    private void narrowSummaryToBookable(VenueEntity venue, VenueSummaryDto dto) {
+        Set<Long> bookable = new HashSet<>(subscriptionGate.bookableCourtIds(venue.getId()));
+        Set<Long> liveSportIds = venue.getCourts() == null ? Set.of()
+                : venue.getCourts().stream()
+                    .filter(c -> bookable.contains(c.getId()))
+                    .map(c -> c.getSport() != null ? c.getSport().getId() : null)
+                    .filter(sid -> sid != null)
+                    .collect(Collectors.toSet());
+        if (dto.getSports() != null) {
+            dto.setSports(dto.getSports().stream()
+                    .filter(s -> liveSportIds.contains(s.getId()))
+                    .collect(Collectors.toList()));
+        }
+        dto.setCourtCount((long) bookable.size());
     }
 
     /** Favorited venue ids for the current authenticated player; empty for anonymous/non-player. */

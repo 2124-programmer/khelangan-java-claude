@@ -152,6 +152,19 @@ public class VenueEntity {
     @Builder.Default
     private int bookableCourtCount = 0;
 
+    /**
+     * Denormalized set of sport ids that have at least one player-bookable court (active +
+     * covered by the current live subscription), recomputed alongside {@link #bookableCourtCount}
+     * on every subscription/court transition. Discovery's sport filter matches against THIS — not
+     * the static {@link #sports} list — so a venue whose court for a sport is locked/uncovered no
+     * longer surfaces under that sport. Empty when the venue holds no live subscription.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "venue_bookable_sports", joinColumns = @JoinColumn(name = "venue_id"))
+    @Column(name = "sport_id", nullable = false)
+    @Builder.Default
+    private Set<Long> bookableSportIds = new HashSet<>();
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "venue_sports",

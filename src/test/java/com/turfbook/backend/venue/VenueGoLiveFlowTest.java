@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -84,7 +85,10 @@ class VenueGoLiveFlowTest {
                 .name("Admin").email("admin+" + System.nanoTime() + "@t.com").phone("8888888888")
                 .passwordHash("h").role(UserEntity.Role.ADMIN).build());
         adminId = admin.getId();
-        sport = sportRepository.save(SportEntity.builder().name("Football").icon("⚽").build());
+        // Reuse the seeded sport if the SportSeeder already created it (it runs on context startup),
+        // otherwise create it — keeps the unique sport-name constraint happy either way.
+        sport = sportRepository.findByName("Football")
+                .orElseGet(() -> sportRepository.save(SportEntity.builder().name("Football").icon("⚽").build()));
     }
 
     private Long planId(PlanCode code) {
@@ -366,5 +370,65 @@ class VenueGoLiveFlowTest {
         // 30-day trial → ~29-30 days remaining, not expiring soon.
         assertThat(summary.getSubscription().getRemainingDays()).isGreaterThan(7);
         assertThat(summary.getSubscription().getExpiringSoon()).isFalse();
+    }
+
+    // ── Scenario 10: discovery sport filter follows court coverage, not the static sports list ──
+    @Test
+    @DisplayName("Discovery: a venue surfaces under a sport only while a court for it is covered (bookable)")
+    void discoverySportFilterFollowsCoverage() {
+        SportEntity cricket = sportRepository.findByName("Cricket")
+                .orElseGet(() -> sportRepository.save(SportEntity.builder().name("Cricket").icon("🏏").build()));
+
+        // Venue offering Football + Cricket, one court for each sport.
+        VenueDetailDto created = venueService.createVenue(owner.getId(), new CreateVenueRequest()
+                .name("Multi " + System.nanoTime()).address("1 St").city("Mumbai")
+                .pricePerHour(500).openTime("06:00").closeTime("22:00")
+                .contactPhone("9876543210").sportIds(List.of(sport.getId(), cricket.getId())));
+        VenueEntity venue = reload(created.getId());
+        CourtEntity footballCourt = courtRepository.save(CourtEntity.builder()
+                .venue(venue).sport(sport).name("F" + System.nanoTime())
+                .pricePerHour(500).slotDurationMins(60).build());
+        CourtEntity cricketCourt = courtRepository.save(CourtEntity.builder()
+                .venue(venue).sport(cricket).name("C" + System.nanoTime())
+                .pricePerHour(500).slotDurationMins(60).build());
+        // Take the venue LIVE and start its trial directly. This bypasses the admin-approval service
+        // path (updateVenueStatus), which requires an authenticated admin principal not wired up in
+        // this data-level test — the discovery filter under test doesn't depend on that path.
+        venue.setStatus(VenueEntity.VenueStatus.LIVE);
+        venueRepository.save(venue);
+        subscriptionGate.startTrialForApprovedVenue(venue.getId());
+
+        // Both courts covered → both sports discoverable, and the static-vs-bookable distinction is moot.
+        SubscriptionEntity sub = currentSub(venue.getId());
+        sub.setCoveredCourtIds(new ArrayList<>(List.of(
+                String.valueOf(footballCourt.getId()), String.valueOf(cricketCourt.getId()))));
+        subscriptionRepository.save(sub);
+        subscriptionGate.recomputeVenueLiveFlag(venue.getId());
+
+        assertThat(reload(venue.getId()).getBookableSportIds())
+                .containsExactlyInAnyOrder(sport.getId(), cricket.getId());
+        assertThat(listedUnderSport(venue.getId(), sport.getId())).isTrue();
+        assertThat(listedUnderSport(venue.getId(), cricket.getId())).isTrue();
+
+        // Lock the cricket court (drop it from coverage). The venue still OFFERS cricket in its
+        // static sports list, but no cricket court is bookable any more.
+        sub = currentSub(venue.getId());
+        sub.setCoveredCourtIds(new ArrayList<>(List.of(String.valueOf(footballCourt.getId()))));
+        subscriptionRepository.save(sub);
+        subscriptionGate.recomputeVenueLiveFlag(venue.getId());
+
+        assertThat(reload(venue.getId()).getBookableSportIds()).containsExactly(sport.getId());
+        // Football court still covered → venue surfaces under Football, but NOT under Cricket.
+        assertThat(listedUnderSport(venue.getId(), sport.getId())).isTrue();
+        assertThat(listedUnderSport(venue.getId(), cricket.getId())).isFalse();
+        // No sport filter → still discoverable (it has a bookable court).
+        assertThat(listedUnderSport(venue.getId(), null)).isTrue();
+    }
+
+    /** True when the venue appears in the player discovery feed for the given sport (null = any sport). */
+    private boolean listedUnderSport(Long venueId, Long sportId) {
+        return venueRepository.findLiveVenuesFiltered(VenueEntity.VenueStatus.LIVE, null, sportId, null,
+                null, null, null, PageRequest.of(0, 50)).stream()
+                .anyMatch(v -> v.getId().equals(venueId));
     }
 }

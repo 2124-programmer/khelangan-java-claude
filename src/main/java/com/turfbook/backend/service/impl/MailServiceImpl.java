@@ -149,6 +149,46 @@ public class MailServiceImpl implements MailService {
         send(toEmail, subject, text, html);
     }
 
+    @Override
+    @Async("mailExecutor")
+    public void sendBookingCancelledToPlayer(String toEmail, String venueName, String date,
+                                             String slotSummary, boolean refundInitiated) {
+        if (toEmail == null || toEmail.isBlank()) return;
+        String subject = String.format("Your Score-Adda booking at %s was cancelled", venueName);
+        String refundLine = refundInitiated
+                ? "A refund has been initiated to your original payment method."
+                : "No refund applies to this cancellation as per the cancellation policy.";
+        String text = String.format(
+                "Your booking at %s on %s (%s) has been cancelled.\n\n%s\n\n"
+                        + "You can book again anytime in the Score-Adda app.",
+                venueName, date, slotSummary, refundLine);
+        String html = noticeHtml(
+                "Booking cancelled",
+                String.format("Your booking at <b>%s</b> on <b>%s</b> (%s) has been cancelled.<br/>%s",
+                        escape(venueName), escape(date), escape(slotSummary), refundLine),
+                "Book again");
+        send(toEmail, subject, text, html);
+    }
+
+    @Override
+    @Async("mailExecutor")
+    public void sendBookingCancelledToOwner(String toEmail, String playerName, String venueName,
+                                            String date, String slotSummary) {
+        if (toEmail == null || toEmail.isBlank()) return;
+        String subject = String.format("Booking cancelled at %s", venueName);
+        String text = String.format(
+                "%s has cancelled their booking at %s on %s (%s).\n\n"
+                        + "The slot(s) are now available for other players to book.",
+                playerName, venueName, date, slotSummary);
+        String html = noticeHtml(
+                "Booking cancelled by player",
+                String.format("<b>%s</b> cancelled their booking at <b>%s</b> on <b>%s</b> (%s). "
+                        + "The slot(s) are now open for other players to book.",
+                        escape(playerName), escape(venueName), escape(date), escape(slotSummary)),
+                "View bookings");
+        send(toEmail, subject, text, html);
+    }
+
     /** Minimal branded HTML for a notice/CTA email (no code) — mirrors {@link #otpHtml} styling. */
     private static String noticeHtml(String heading, String bodyHtml, String cta) {
         return "<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#0A1730\">"

@@ -26,4 +26,18 @@ public interface MailService {
      * prompt them to purchase/renew to relist.
      */
     void sendSubscriptionExpiredReminder(String toEmail, String venueName);
+
+    /**
+     * Tell the player their booking was cancelled (their own action), noting whether a refund applies.
+     * No-op when {@code toEmail} is blank.
+     */
+    void sendBookingCancelledToPlayer(String toEmail, String venueName, String date,
+                                      String slotSummary, boolean refundInitiated);
+
+    /**
+     * Tell the venue owner that a player cancelled a booking and the slot(s) reopened.
+     * No-op when {@code toEmail} is blank.
+     */
+    void sendBookingCancelledToOwner(String toEmail, String playerName, String venueName,
+                                     String date, String slotSummary);
 }

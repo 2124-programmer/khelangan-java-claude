@@ -1212,7 +1212,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         sub.setPostExpiryReminderSent(false);
     }
 
-    /** Recompute the venue's denormalized live flag + placement weight + bookable-court count. */
+    /** Recompute the venue's denormalized live flag + placement weight + bookable courts/sports. */
     private void recomputeVenueLive(VenueEntity venue) {
         Optional<SubscriptionEntity> live = liveSubscription(venue);
         boolean active = live.isPresent();
@@ -1220,6 +1220,7 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
         int weight = 0;
         boolean featured = false;
         int bookable = 0;
+        Set<Long> bookableSports = new HashSet<>();
         if (active) {
             SubscriptionEntity sub = live.get();
             List<FeatureCode> features = sub.getFeatureCodes();
@@ -1227,22 +1228,30 @@ public class SubscriptionServiceImpl implements SubscriptionService, Subscriptio
                 weight = sub.getPlan().getPlacementWeight();
             }
             featured = features.contains(FeatureCode.FEATURED_BADGE);
-            bookable = countBookableCourts(venue, sub);
+            List<CourtEntity> bookableCourts = bookableCourts(venue, sub);
+            bookable = bookableCourts.size();
+            for (CourtEntity c : bookableCourts) {
+                if (c.getSport() != null) bookableSports.add(c.getSport().getId());
+            }
         }
         venue.setPlacementWeight(weight);
         venue.setFeatured(featured);
         venue.setBookableCourtCount(bookable);
+        // Replace contents in place so Hibernate diffs the @ElementCollection cleanly.
+        venue.getBookableSportIds().clear();
+        venue.getBookableSportIds().addAll(bookableSports);
         venueRepository.save(venue);
     }
 
-    /** Active courts of the venue whose id is covered by the given subscription. */
-    private int countBookableCourts(VenueEntity venue, SubscriptionEntity sub) {
+    /** Active, non-deleted courts of the venue whose id is covered by the given subscription. */
+    private List<CourtEntity> bookableCourts(VenueEntity venue, SubscriptionEntity sub) {
         Set<String> covered = new HashSet<>(sub.getCoveredCourtIds());
-        if (covered.isEmpty()) return 0;
-        return (int) courtRepository.findByVenue(venue).stream()
+        if (covered.isEmpty()) return List.of();
+        return courtRepository.findByVenue(venue).stream()
                 .filter(CourtEntity::isActive)
+                .filter(c -> !c.isDeleted())
                 .filter(c -> covered.contains(String.valueOf(c.getId())))
-                .count();
+                .toList();
     }
 
     private void recordPayment(SubscriptionEntity sub, int amount, Object methodEnum, String reference, Long adminId) {

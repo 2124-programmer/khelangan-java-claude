@@ -11,6 +11,7 @@ import com.turfbook.backend.exception.UnauthorizedException;
 import com.turfbook.backend.mapper.BookingMapper;
 import com.turfbook.backend.repository.*;
 import com.turfbook.backend.service.BookingService;
+import com.turfbook.backend.service.MailService;
 import com.turfbook.backend.service.NotificationService;
 import com.turfbook.backend.service.OwnerSettingsService;
 import com.turfbook.backend.service.subscription.SubscriptionGate;
@@ -47,6 +48,7 @@ public class BookingServiceImpl implements BookingService {
     private final BookingMapper bookingMapper;
     private final OwnerSettingsService ownerSettingsService;
     private final SubscriptionGate subscriptionGate;
+    private final MailService mailService;
 
     // ─── listBookings ──────────────────────────────────────────────────────
 
@@ -396,7 +398,24 @@ public class BookingServiceImpl implements BookingService {
                 "BOOKING"
         );
 
+        // Email both parties (async, best-effort). Player learns the refund outcome; owner learns the
+        // slot reopened. Mirrors the in-app notifications above.
+        String slotRange = slot.getStartTime() + "–" + slot.getEndTime();
+        boolean refunded = booking.getPaymentStatus() == BookingEntity.PaymentStatus.REFUNDED;
+        mailService.sendBookingCancelledToPlayer(emailOf(booking.getPlayer()),
+                booking.getVenue().getName(), String.valueOf(booking.getDate()), slotRange, refunded);
+        mailService.sendBookingCancelledToOwner(emailOf(booking.getVenue().getOwner()),
+                booking.getPlayer().getName(), booking.getVenue().getName(),
+                String.valueOf(booking.getDate()), slotRange);
+
         return bookingMapper.toDto(booking);
+    }
+
+    /** Best email for a user (active email preferred), or null when none is set. */
+    private static String emailOf(UserEntity user) {
+        if (user == null) return null;
+        if (user.getActiveEmail() != null && !user.getActiveEmail().isBlank()) return user.getActiveEmail();
+        return user.getEmail() != null && !user.getEmail().isBlank() ? user.getEmail() : null;
     }
 
     // ─── cancelBookingGroup ────────────────────────────────────────────────
@@ -475,6 +494,12 @@ public class BookingServiceImpl implements BookingService {
                 groupId,
                 "BOOKING_GROUP"
         );
+
+        // Email both parties (async, best-effort), mirroring the in-app notifications above.
+        mailService.sendBookingCancelledToPlayer(emailOf(player),
+                venue.getName(), String.valueOf(date), slotSummary, anyRefund);
+        mailService.sendBookingCancelledToOwner(emailOf(venue.getOwner()),
+                player.getName(), venue.getName(), String.valueOf(date), slotSummary);
 
         log.info("BookingGroup {} cancelled by player {}: {} bookings cancelled", groupId, playerId, results.size());
         return results;

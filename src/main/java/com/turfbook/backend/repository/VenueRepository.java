@@ -35,12 +35,14 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
     // A venue is shown to players only when approved (status LIVE) AND it holds an
     // active/trialing subscription (denormalized subscriptionActive flag) AND that subscription
     // covers at least one active court (bookableCourtCount > 0) — a venue with no bookable court
-    // is omitted from discovery entirely. Ordering applies the active plan's placementWeight
-    // (0 when no PRIORITY_PLACEMENT) on top of rating.
-    @Query("SELECT DISTINCT v FROM VenueEntity v LEFT JOIN v.sports s WHERE " +
+    // is omitted from discovery entirely. The sport filter matches the denormalized
+    // bookableSportIds (sports with a covered/bookable court), NOT the static venue_sports list,
+    // so a venue whose court for that sport is locked/uncovered is excluded. Ordering applies the
+    // active plan's placementWeight (0 when no PRIORITY_PLACEMENT) on top of rating.
+    @Query("SELECT v FROM VenueEntity v WHERE " +
            "v.status = :liveStatus AND v.subscriptionActive = true AND v.bookableCourtCount > 0 AND " +
            "(:city IS NULL OR LOWER(v.city) = LOWER(:city)) AND " +
-           "(:sportId IS NULL OR s.id = :sportId) AND " +
+           "(:sportId IS NULL OR :sportId MEMBER OF v.bookableSportIds) AND " +
            "(:search IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
            "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :search, '%'))) " +
            "ORDER BY v.placementWeight DESC, COALESCE(v.ratingAverage, 0) DESC, v.id DESC")
@@ -54,11 +56,13 @@ public interface VenueRepository extends JpaRepository<VenueEntity, Long> {
 
     // Discovery with optional price/rating filters. Ordering is supplied via the Pageable's Sort
     // (so the service can switch between default placement, price, rating, and newest) rather than
-    // a hardcoded ORDER BY. The bookable-court + live + active-subscription gate is unchanged.
-    @Query("SELECT DISTINCT v FROM VenueEntity v LEFT JOIN v.sports s WHERE " +
+    // a hardcoded ORDER BY. The bookable-court + live + active-subscription gate is unchanged. The
+    // sport filter matches the denormalized bookableSportIds (sports with a covered/bookable court),
+    // not the static venue_sports list, so a venue whose court for that sport is locked is excluded.
+    @Query("SELECT v FROM VenueEntity v WHERE " +
            "v.status = :liveStatus AND v.subscriptionActive = true AND v.bookableCourtCount > 0 AND " +
            "(:city IS NULL OR LOWER(v.city) = LOWER(:city)) AND " +
-           "(:sportId IS NULL OR s.id = :sportId) AND " +
+           "(:sportId IS NULL OR :sportId MEMBER OF v.bookableSportIds) AND " +
            "(:search IS NULL OR LOWER(v.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
            "OR LOWER(v.city) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
            "(:minPrice IS NULL OR v.pricePerHour >= :minPrice) AND " +
