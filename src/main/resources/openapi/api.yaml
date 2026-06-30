@@ -2032,6 +2032,34 @@ components:
         activeCoupons:
           type: integer
           format: int64
+        venuesByStatus:
+          $ref: '#/components/schemas/VenueStatusCounts'
+
+    # Per-status venue breakdown for the admin dashboard "Venues" card.
+    VenueStatusCounts:
+      type: object
+      properties:
+        live:
+          type: integer
+          format: int64
+        pending:
+          type: integer
+          format: int64
+        changesRequested:
+          type: integer
+          format: int64
+        rejected:
+          type: integer
+          format: int64
+        suspended:
+          type: integer
+          format: int64
+        draft:
+          type: integer
+          format: int64
+        archived:
+          type: integer
+          format: int64
 
     DashboardSummary:
       type: object
