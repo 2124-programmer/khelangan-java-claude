@@ -87,7 +87,7 @@ app:
     secret: ${JWT_SECRET}
     expiration-ms: 86400000  # 24 hours
   upload:
-    dir: ${UPLOAD_DIR}
+    dir: ${UPLOAD_DIR:uat/uploads}
   base-url: ${BASE_URL}
   cors:
     # Lock to the real web origin(s) in prod, e.g. "https://admin.score-adda.com".
