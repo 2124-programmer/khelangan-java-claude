@@ -28,7 +28,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VenueImageController {
 
-    private static final long MAX_BYTES = 350_000;          // 350 KB upper guard
+    private static final long MAX_BYTES = 2_000_000;        // 2 MB upper guard (venue banner)
     private static final List<String> ALLOWED_TYPES =
             List.of("image/jpeg", "image/jpg", "image/png", "image/webp");
 

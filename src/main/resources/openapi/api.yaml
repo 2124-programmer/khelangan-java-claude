@@ -2386,6 +2386,9 @@ components:
           type: string
         maxCourts:
           type: integer
+        photoLimit:
+          type: integer
+          description: Max venue photos the current plan allows (from the live plan).
         coveredCourtIds:
           type: array
           items: { type: string }

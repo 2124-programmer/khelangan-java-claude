@@ -82,6 +82,7 @@ public class SubscriptionMapper {
                 .price(e.getPrice())
                 .currency(e.getCurrency())
                 .maxCourts(e.getMaxCourts())
+                .photoLimit(e.getPlan().getPhotoLimit())
                 .coveredCourtIds(covered)
                 .coveredCourtNames(resolveCourtNames(e.getVenue(), covered))
                 .features(new ArrayList<>(e.getFeatures()))
